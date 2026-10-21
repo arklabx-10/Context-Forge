@@ -7,17 +7,28 @@ import type {
   AiGenerationRequest,
   AiGenerationResponse,
   AiProviderCapabilities,
+  AiProviderConfig,
   ApiSurfaceDescriptor,
   ChangedFileDiff,
+  ChangeReviewReport,
+  ContextExportFormat,
+  ContextPack,
   DatabaseObjectDescriptor,
   DependencyEdge,
   EntryPointDescriptor,
   EvidenceBackedClaim,
   ExternalDependency,
   ExtractedSymbol,
+  GitMetadata,
   IndexedFileRecord,
+  KnowledgeEntry,
   OutboundConsentToken,
+  PrivacyAndIndexStatus,
+  RepositoryRecord,
+  RepositorySnapshot,
   ReviewFinding,
+  ScanResourceLimits,
+  SearchHit,
   SourceReference,
   SubProjectKind,
 } from './models.js';
@@ -70,7 +81,7 @@ export interface AdapterDiffContext {
 }
 
 /**
- * Pluggable, independently testable Language / Stack / SQL Adapter contract.
+ * 1. Analyzer Port: Pluggable, independently testable Language / Stack / SQL Adapter contract.
  */
 export interface RepositoryAnalyzerAdapter {
   readonly adapterId: string;
@@ -87,7 +98,24 @@ export interface RepositoryAnalyzerAdapter {
 }
 
 /**
- * Vendor-neutral AI Provider interface.
+ * 2. Repository Access Port: Safe local filesystem and read-only Git access contract.
+ */
+export interface RepositoryAccessPort {
+  validateAndResolveRoot(inputPath: string): Promise<string>;
+  readSafeFile(
+    canonicalRootPath: string,
+    relativePath: string,
+    maxBytes?: number
+  ): Promise<{ readonly content: string; readonly sha256: string; readonly lineCount: number } | null>;
+  extractGitMetadata(canonicalRootPath: string): Promise<GitMetadata>;
+  getGitDiffs(
+    canonicalRootPath: string,
+    targetSpec?: string
+  ): Promise<{ readonly label: string; readonly files: readonly ChangedFileDiff[] }>;
+}
+
+/**
+ * 3. AI Provider Port: Vendor-neutral AI Provider interface.
  */
 export interface AiProviderPort {
   readonly providerId: string;
@@ -99,6 +127,50 @@ export interface AiProviderPort {
     request: AiGenerationRequest,
     consentToken: OutboundConsentToken
   ): Promise<AiGenerationResponse>;
+}
+
+/**
+ * 4. Persistence Port: Storage & Search Index contract.
+ */
+export interface PersistencePort {
+  upsertRepository(record: RepositoryRecord): void;
+  getRepositoryById(repoId: string): RepositoryRecord | null;
+  getRepositoryByRootPath(rootPath: string): RepositoryRecord | null;
+  listRepositories(): readonly RepositoryRecord[];
+  deleteRepository(repoId: string): void;
+  saveSnapshotAndIndex(
+    snapshot: RepositorySnapshot,
+    fileContentsMap?: ReadonlyMap<string, string>
+  ): void;
+  getLatestSnapshot(repoId: string): RepositorySnapshot | null;
+  search(params: {
+    readonly query: string;
+    readonly repoId?: string;
+    readonly kind?: SearchHit['kind'];
+    readonly limit?: number;
+  }): readonly SearchHit[];
+  upsertKnowledgeEntry(
+    entry: Omit<KnowledgeEntry, 'stalenessStatus' | 'driftDetails'>
+  ): KnowledgeEntry;
+  listKnowledgeEntries(repoId: string): readonly KnowledgeEntry[];
+  deleteKnowledgeEntry(id: string): void;
+  saveContextPack(pack: ContextPack): void;
+  listContextPacks(repoId: string): readonly ContextPack[];
+  saveChangeReview(report: ChangeReviewReport): void;
+  listChangeReviews(repoId: string): readonly ChangeReviewReport[];
+  getAiProviderConfig(): AiProviderConfig;
+  saveAiProviderConfig(config: AiProviderConfig): void;
+  recordOutboundConsentApproval(token: OutboundConsentToken): void;
+  verifyOutboundConsent(consentId: string, payloadSha256: string, providerId: string): boolean;
+  getPrivacyAndIndexStatus(): PrivacyAndIndexStatus;
+  purgeAllIndexedData(): void;
+}
+
+/**
+ * 5. Context Exporter Port: Deterministic ContextPack formatting contract.
+ */
+export interface ContextExporterPort {
+  exportPack(pack: ContextPack, format: ContextExportFormat): string;
 }
 
 /**

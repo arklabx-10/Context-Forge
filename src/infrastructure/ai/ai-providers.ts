@@ -19,6 +19,22 @@ export class ConsentRequiredError extends Error {
   }
 }
 
+export class AiInputSizeExceededError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'AiInputSizeExceededError';
+  }
+}
+
+export class AiProviderExecutionError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'AiProviderExecutionError';
+  }
+}
+
+export const MAX_HARD_AI_PAYLOAD_CHARS = 256_000;
+
 /**
  * Default local-only deterministic provider.
  * Performs zero external network calls and clearly labels output as deterministic structural synthesis.
@@ -119,6 +135,16 @@ export class ConsentGatedExternalAiProvider implements AiProviderPort {
     const startMs = Date.now();
     const { redactedPayloadText, payloadSha256 } = buildRedactedOutboundPayload(request);
 
+    const maxAllowedChars = Math.min(
+      MAX_HARD_AI_PAYLOAD_CHARS,
+      Math.max(1000, this.config.maxRequestTokens * 4)
+    );
+    if (redactedPayloadText.length > maxAllowedChars) {
+      throw new AiInputSizeExceededError(
+        `Outbound AI payload (${redactedPayloadText.length} chars) exceeds configured maximum input size (${maxAllowedChars} chars / ~${this.config.maxRequestTokens} tokens).`
+      );
+    }
+
     // Non-negotiable security invariant: verify explicit user consent matching exact payload SHA-256
     if (
       !consentToken ||
@@ -207,6 +233,11 @@ export class ConsentGatedExternalAiProvider implements AiProviderPort {
         completedAtIso: new Date().toISOString(),
         durationMs: Math.max(1, Date.now() - startMs),
       };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Unknown provider error';
+      throw new AiProviderExecutionError(
+        `AI provider "${this.providerId}" failed safely without leaking source contents: ${reason}`
+      );
     } finally {
       clearTimeout(timeoutHandle);
     }

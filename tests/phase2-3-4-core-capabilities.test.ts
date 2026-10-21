@@ -3,8 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ContextForgeWorkspaceService } from '../src/application/workspace-service.js';
 import {
+  AiInputSizeExceededError,
+  AiProviderExecutionError,
   ConsentGatedExternalAiProvider,
   ConsentRequiredError,
+  createOutboundConsentPreview,
 } from '../src/infrastructure/ai/ai-providers.js';
 import { assembleContextPack } from '../src/infrastructure/context-engine/context-assembler.js';
 import { exportContextPack } from '../src/infrastructure/context-engine/context-exporters.js';
@@ -284,6 +287,31 @@ describe('Phases 2, 3 & 4 — Polyglot Analysis, Unknown Stacks, Deterministic C
         ConsentRequiredError
       );
       expect(store.getPrivacyAndIndexStatus().outboundAiRequestsCount).toBe(0);
+
+      // Verify input size bounding
+      const oversizedRequest = {
+        ...request,
+        untrustedContextPackText: 'A'.repeat(25000),
+      };
+      await expect(provider.generateText(oversizedRequest, forgedConsent)).rejects.toThrow(
+        AiInputSizeExceededError
+      );
+
+      // Verify predictable provider failure handling when consent is valid but endpoint is unreachable
+      const preview = createOutboundConsentPreview(externalConfig, request);
+      const validConsent = {
+        consentId: preview.consentId,
+        approvedAtIso: new Date().toISOString(),
+        providerId: 'openai_compatible',
+        payloadSha256: preview.payloadSha256,
+        disclosedFilePaths: ['src/main.tsx'],
+        estimatedBytes: preview.totalCharacters,
+      };
+      store.recordOutboundConsentApproval(validConsent);
+
+      await expect(provider.generateText(request, validConsent)).rejects.toThrow(
+        AiProviderExecutionError
+      );
     } finally {
       store.close();
     }

@@ -8,6 +8,7 @@ import type {
   KnowledgeEntry,
   KnowledgeReferenceDrift,
   OutboundConsentToken,
+  PersistencePort,
   PrivacyAndIndexStatus,
   RepositoryRecord,
   RepositorySnapshot,
@@ -25,7 +26,7 @@ export const DEFAULT_AI_PROVIDER_CONFIG: AiProviderConfig = {
   timeoutMs: 15000,
 };
 
-export class ContextForgeSqliteStore {
+export class ContextForgeSqliteStore implements PersistencePort {
   private db: DatabaseSync;
   private readonly dbFilePath: string;
   private isClosed = false;
