@@ -116,6 +116,31 @@ async function handleApiRequest(
         description: 'ASP.NET Core Minimal API with C#, Dapper, xUnit, and MSBuild .csproj',
         path: path.join(workspaceRoot, 'tests', 'fixtures', 'dotnet-sql-service'),
       },
+      {
+        label: 'Compiled Rust + C++ Header FFI App (Fixture)',
+        description: 'Rust Cargo binary with C++ header FFI, Cargo.lock, and internal mod graph',
+        path: path.join(workspaceRoot, 'tests', 'fixtures', 'compiled-rust-app'),
+      },
+      {
+        label: 'TypeScript Service + OpenAPI Spec (Fixture)',
+        description: 'Node/TypeScript service with package-lock.json, OpenAPI spec, and Vitest tests',
+        path: path.join(workspaceRoot, 'tests', 'fixtures', 'ts-service-project'),
+      },
+      {
+        label: 'Python Service + Extensionless Daemon (Fixture)',
+        description: 'PEP 621 pyproject.toml, poetry.lock, FastAPI service, and shebang worker script',
+        path: path.join(workspaceRoot, 'tests', 'fixtures', 'python-service-project'),
+      },
+      {
+        label: 'Database-Heavy SQL & Prisma Repo (Fixture)',
+        description: 'SQL DDL migrations (tables, views, procedures, foreign keys) and Prisma schema',
+        path: path.join(workspaceRoot, 'tests', 'fixtures', 'database-heavy-repo'),
+      },
+      {
+        label: 'Malformed Manifests & Partial Analysis (Fixture)',
+        description: 'Broken package.json, pyproject.toml, and .csproj demonstrating partial analysis & warnings',
+        path: path.join(workspaceRoot, 'tests', 'fixtures', 'malformed-and-inaccessible'),
+      },
     ];
 
     sendJson(res, 200, {
@@ -162,6 +187,20 @@ async function handleApiRequest(
       return;
     }
 
+    if (method === 'PUT' && subRoute === 'settings') {
+      const body = await readJsonBody<{
+        name?: string;
+        resourceLimits?: Partial<ScanResourceLimits>;
+        rescan?: boolean;
+      }>(req);
+      const updated = await service.updateRepositorySettings({
+        repoId,
+        ...body,
+      });
+      sendJson(res, 200, updated);
+      return;
+    }
+
     if (method === 'GET' && subRoute === 'snapshot') {
       const snapshot = service.getRepositorySnapshot(repoId);
       if (!snapshot) {
@@ -180,7 +219,14 @@ async function handleApiRequest(
 
     if (method === 'GET' && subRoute === 'file') {
       const relPath = parsedUrl.searchParams.get('path') ?? '';
-      const fileData = await service.readRepositoryFile(repoId, relPath);
+      const startParam = parsedUrl.searchParams.get('startLine');
+      const endParam = parsedUrl.searchParams.get('endLine');
+      const startLine = startParam ? Number.parseInt(startParam, 10) : undefined;
+      const endLine = endParam ? Number.parseInt(endParam, 10) : undefined;
+      const fileData = await service.readRepositoryFile(repoId, relPath, {
+        ...(startLine !== undefined && !Number.isNaN(startLine) ? { startLine } : {}),
+        ...(endLine !== undefined && !Number.isNaN(endLine) ? { endLine } : {}),
+      });
       if (!fileData) {
         sendJson(res, 404, {
           error: `File "${relPath}" cannot be read (missing, excluded as sensitive, or outside repository root).`,

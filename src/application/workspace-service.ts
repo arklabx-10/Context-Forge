@@ -148,14 +148,61 @@ export class ContextForgeWorkspaceService {
     return generateRepositoryMarkdownReport(snapshot, options);
   }
 
+  public async updateRepositorySettings(params: {
+    readonly repoId: string;
+    readonly name?: string;
+    readonly resourceLimits?: Partial<ScanResourceLimits>;
+    readonly rescan?: boolean;
+  }): Promise<{ readonly repository: RepositoryRecord; readonly snapshot: RepositorySnapshot | null }> {
+    const existing = this.store.getRepositoryById(params.repoId);
+    if (!existing) {
+      throw new Error(`Repository not found: ${params.repoId}`);
+    }
+
+    const updatedLimits: ScanResourceLimits = {
+      ...existing.resourceLimits,
+      ...(params.resourceLimits ?? {}),
+    };
+
+    const updatedRecord: RepositoryRecord = {
+      ...existing,
+      name: params.name?.trim() || existing.name,
+      resourceLimits: updatedLimits,
+    };
+
+    this.store.upsertRepository(updatedRecord);
+
+    if (params.rescan !== false) {
+      const { repository, snapshot } = await this.onboardRepository({
+        rootPath: updatedRecord.rootPath,
+        name: updatedRecord.name,
+        resourceLimits: updatedLimits,
+      });
+      return { repository, snapshot };
+    }
+
+    return {
+      repository: updatedRecord,
+      snapshot: this.store.getLatestSnapshot(params.repoId),
+    };
+  }
+
   public async readRepositoryFile(
     repoId: string,
-    relativePath: string
+    relativePath: string,
+    options?: {
+      readonly startLine?: number;
+      readonly endLine?: number;
+    }
   ): Promise<{
     readonly relativePath: string;
     readonly content: string;
     readonly sha256: string;
     readonly lineCount: number;
+    readonly sliceStartLine: number;
+    readonly sliceEndLine: number;
+    readonly hasMoreBefore: boolean;
+    readonly hasMoreAfter: boolean;
   } | null> {
     const repo = this.store.getRepositoryById(repoId);
     if (!repo) {
@@ -169,9 +216,32 @@ export class ContextForgeWorkspaceService {
     if (!result) {
       return null;
     }
+
+    const allLines = result.content.split('\n');
+    const totalLines = allLines.length;
+    const requestedStart =
+      options?.startLine !== undefined && Number.isFinite(options.startLine)
+        ? Math.max(1, Math.min(totalLines, Math.floor(options.startLine)))
+        : 1;
+    const requestedEnd =
+      options?.endLine !== undefined && Number.isFinite(options.endLine)
+        ? Math.max(requestedStart, Math.min(totalLines, Math.floor(options.endLine)))
+        : totalLines;
+
+    const slicedContent =
+      requestedStart === 1 && requestedEnd === totalLines
+        ? result.content
+        : allLines.slice(requestedStart - 1, requestedEnd).join('\n');
+
     return {
       relativePath: relativePath.replace(/\\/g, '/'),
-      ...result,
+      content: slicedContent,
+      sha256: result.sha256,
+      lineCount: result.lineCount,
+      sliceStartLine: requestedStart,
+      sliceEndLine: requestedEnd,
+      hasMoreBefore: requestedStart > 1,
+      hasMoreAfter: requestedEnd < totalLines,
     };
   }
 

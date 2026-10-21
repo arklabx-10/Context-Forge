@@ -76,6 +76,22 @@ export const apiClient = {
       { method: 'POST' }
     ),
 
+  updateRepositorySettings: (
+    repoId: string,
+    payload: {
+      name?: string;
+      resourceLimits?: Partial<ScanResourceLimits>;
+      rescan?: boolean;
+    }
+  ) =>
+    requestJson<{ repository: RepositoryRecord; snapshot: RepositorySnapshot | null }>(
+      `/api/repositories/${encodeURIComponent(repoId)}/settings`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    ),
+
   deleteRepository: (repoId: string) =>
     requestJson<{ deleted: boolean }>(`/api/repositories/${encodeURIComponent(repoId)}`, {
       method: 'DELETE',
@@ -86,15 +102,30 @@ export const apiClient = {
       `/api/repositories/${encodeURIComponent(repoId)}/snapshot`
     ),
 
-  readFile: (repoId: string, relativePath: string) =>
-    requestJson<{
+  getReport: (repoId: string) =>
+    requestJson<{ reportMarkdown: string }>(
+      `/api/repositories/${encodeURIComponent(repoId)}/report`
+    ),
+
+  readFile: (
+    repoId: string,
+    relativePath: string,
+    options?: { startLine?: number; endLine?: number }
+  ) => {
+    const qs = new URLSearchParams({ path: relativePath });
+    if (options?.startLine !== undefined) qs.set('startLine', String(options.startLine));
+    if (options?.endLine !== undefined) qs.set('endLine', String(options.endLine));
+    return requestJson<{
       relativePath: string;
       content: string;
       sha256: string;
       lineCount: number;
-    }>(
-      `/api/repositories/${encodeURIComponent(repoId)}/file?path=${encodeURIComponent(relativePath)}`
-    ),
+      sliceStartLine: number;
+      sliceEndLine: number;
+      hasMoreBefore: boolean;
+      hasMoreAfter: boolean;
+    }>(`/api/repositories/${encodeURIComponent(repoId)}/file?${qs.toString()}`);
+  },
 
   search: (params: { query: string; repoId?: string; kind?: string }) => {
     const qs = new URLSearchParams({ q: params.query });
