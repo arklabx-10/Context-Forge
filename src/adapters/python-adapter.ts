@@ -121,9 +121,16 @@ export class PythonAdapter implements RepositoryAnalyzerAdapter {
     const frameworks: EvidenceBackedClaim<string>[] = [];
     const testHarnesses: EvidenceBackedClaim<string>[] = [];
     const packageManagers: EvidenceBackedClaim<string>[] = [];
+    const notesOrLimitations: string[] = [];
 
     for (let i = 0; i < ctx.lines.length; i += 1) {
       const line = (ctx.lines[i] ?? '').trim();
+      if (line.startsWith('[') && !line.endsWith(']')) {
+        notesOrLimitations.push(
+          `Malformed TOML section header in ${ctx.file.relativePath}:${i + 1} ("${line.slice(0, 60)}").`
+        );
+        continue;
+      }
       const ref = createSourceRef({
         repoId: ctx.repoId,
         relativePath: ctx.file.relativePath,
@@ -142,13 +149,23 @@ export class PythonAdapter implements RepositoryAnalyzerAdapter {
           rationale: `[tool.poetry] section found in ${ctx.file.relativePath}:${i + 1}.`,
           producerId: this.adapterId,
         });
+      } else if (line.includes('[project]')) {
+        packageManagers.push({
+          id: `pm:${ctx.subProjectId}:pep621`,
+          value: 'PEP 621 / pyproject',
+          certainty: 'verified',
+          evidence: [ref],
+          rationale: `[project] table found in ${ctx.file.relativePath}:${i + 1}.`,
+          producerId: this.adapterId,
+        });
       }
 
       // Match dependency strings like "fastapi>=0.110.0" or fastapi = "^0.110.0"
       const quotedDep = /^["']([A-Za-z0-9_.-]+)\s*([<>=!~^][^"']*)?["']\s*,?$/.exec(line);
-      if (quotedDep?.[1]) {
-        const pkg = quotedDep[1].toLowerCase();
-        const ver = (quotedDep[2] ?? '*').trim();
+      const kvDep = /^([A-Za-z0-9_.-]+)\s*=\s*["']([^"']+)["']$/.exec(line);
+      const pkg = (quotedDep?.[1] ?? (kvDep?.[1] && !['name', 'version', 'description', 'readme', 'python', 'requires-python'].includes(kvDep[1].toLowerCase()) ? kvDep[1] : undefined))?.toLowerCase();
+      const ver = (quotedDep?.[2] ?? kvDep?.[2] ?? '*').trim();
+      if (pkg) {
         externalDependencies.push({
           id: `extdep:${ctx.subProjectId}:${pkg}`,
           value: {
@@ -172,6 +189,7 @@ export class PythonAdapter implements RepositoryAnalyzerAdapter {
       externalDependencies,
       frameworks,
       testHarnesses,
+      ...(notesOrLimitations.length > 0 ? { notesOrLimitations } : {}),
     };
   }
 

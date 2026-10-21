@@ -1,10 +1,12 @@
 import path from 'node:path';
 import type {
+  CertaintyLevel,
   EntryPointDescriptor,
   EvidenceBackedClaim,
   ExtractedSymbol,
   FileRole,
   IndexedFileRecord,
+  LanguageDetectionSignal,
   SourceReference,
   SubProject,
   SubProjectKind,
@@ -116,6 +118,54 @@ const BUILD_CONFIG_BASENAMES = new Set([
   'jest.config.ts',
 ]);
 
+const LOCKFILE_BASENAMES = new Set([
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'poetry.lock',
+  'pipfile.lock',
+  'uv.lock',
+  'cargo.lock',
+  'go.sum',
+  'packages.lock.json',
+  'composer.lock',
+  'gemfile.lock',
+  'mix.lock',
+]);
+
+export function isLockfilePath(relativePath: string): boolean {
+  const baseLower = path.posix.basename(relativePath).toLowerCase();
+  return LOCKFILE_BASENAMES.has(baseLower) || baseLower.endsWith('.lock');
+}
+
+export function isApiSpecificationFile(relativePath: string, decodedContent?: string): boolean {
+  const lowerPath = relativePath.toLowerCase();
+  const baseLower = path.posix.basename(lowerPath);
+  const ext = path.posix.extname(baseLower);
+
+  if (
+    baseLower.startsWith('openapi.') ||
+    baseLower.startsWith('swagger.') ||
+    baseLower.startsWith('asyncapi.') ||
+    ext === '.proto' ||
+    ext === '.graphql' ||
+    ext === '.gql'
+  ) {
+    return true;
+  }
+
+  if (decodedContent && (ext === '.yaml' || ext === '.yml' || ext === '.json')) {
+    const head = decodedContent.slice(0, 600);
+    if (/^\s*["']?(?:openapi|swagger|asyncapi)["']?\s*:\s*["']?[23]\./m.test(head)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Determines whether a filename is a project manifest (including *.csproj, *.fsproj, *.sln).
  */
@@ -172,6 +222,14 @@ export function classifyFileRole(relativePath: string, isIndexed: boolean, decod
 
   if (isManifestPath(relativePath)) {
     return 'manifest';
+  }
+
+  if (isLockfilePath(relativePath)) {
+    return 'lockfile';
+  }
+
+  if (isApiSpecificationFile(relativePath, decodedContent)) {
+    return 'api_spec';
   }
 
   if (
@@ -268,42 +326,139 @@ export function classifyFileRole(relativePath: string, isIndexed: boolean, decod
 }
 
 /**
- * Detects language name from extension, special filename, shebang, or falls back to custom extension label.
+ * Multi-signal language detector using:
+ * 1. Filename signal (Dockerfile, Makefile, CMakeLists.txt, Jenkinsfile, etc.)
+ * 2. Shebang interpreter directive (#!/usr/bin/env python3, #!/bin/bash, etc.)
+ * 3. Extension signal (.ts, .py, .rs, .go, .cs, .sql, etc.)
+ * 4. Lexical content signature signal (distinguishing C++ vs C headers, extensionless scripts, SQL/OpenAPI/Rust/Go/Python code patterns)
  */
-export function detectFileLanguage(relativePath: string, decodedContent?: string): string | null {
+export function detectFileLanguageWithSignals(
+  relativePath: string,
+  decodedContent?: string
+): {
+  readonly language: string | null;
+  readonly signals: readonly LanguageDetectionSignal[];
+  readonly certainty: CertaintyLevel;
+} {
   const baseLower = path.posix.basename(relativePath).toLowerCase();
   const ext = path.posix.extname(baseLower);
+  const signals: LanguageDetectionSignal[] = [];
 
+  // Signal 1: Special filenames
   if (baseLower === 'dockerfile' || baseLower.startsWith('dockerfile.')) {
-    return 'Dockerfile';
+    return { language: 'Dockerfile', signals: ['filename'], certainty: 'verified' };
   }
   if (baseLower === 'makefile' || baseLower === 'gnumakefile') {
-    return 'Makefile';
+    return { language: 'Makefile', signals: ['filename'], certainty: 'verified' };
   }
   if (baseLower === 'cmakelists.txt') {
-    return 'CMake';
+    return { language: 'CMake', signals: ['filename'], certainty: 'verified' };
+  }
+  if (baseLower === 'jenkinsfile') {
+    return { language: 'Groovy (Jenkinsfile)', signals: ['filename'], certainty: 'verified' };
   }
 
-  if (EXTENSION_LANGUAGE_MAP[ext]) {
-    return EXTENSION_LANGUAGE_MAP[ext]!;
-  }
-
+  // Signal 2: Shebang interpreter line
+  let shebangLang: string | null = null;
   if (decodedContent) {
     const firstLine = decodedContent.split('\n', 1)[0] ?? '';
     if (firstLine.startsWith('#!')) {
-      if (firstLine.includes('python')) return 'Python';
-      if (firstLine.includes('node') || firstLine.includes('deno') || firstLine.includes('bun')) return 'JavaScript';
-      if (firstLine.includes('bash') || firstLine.includes('sh')) return 'Shell';
-      if (firstLine.includes('ruby')) return 'Ruby';
-      if (firstLine.includes('perl')) return 'Perl';
+      if (firstLine.includes('python')) shebangLang = 'Python';
+      else if (firstLine.includes('ts-node') || firstLine.includes('tsx')) shebangLang = 'TypeScript';
+      else if (firstLine.includes('node') || firstLine.includes('deno') || firstLine.includes('bun'))
+        shebangLang = 'JavaScript';
+      else if (firstLine.includes('bash')) shebangLang = 'Bash';
+      else if (firstLine.includes('sh')) shebangLang = 'Shell';
+      else if (firstLine.includes('ruby')) shebangLang = 'Ruby';
+      else if (firstLine.includes('perl')) shebangLang = 'Perl';
+      else if (firstLine.includes('pwsh') || firstLine.includes('powershell'))
+        shebangLang = 'PowerShell';
+
+      if (shebangLang) {
+        signals.push('shebang');
+      }
     }
   }
 
-  if (ext && ext.length > 1 && ext.length <= 10 && decodedContent !== undefined) {
-    return `Unrecognized (${ext})`;
+  // Signal 3: File extension
+  const extLang = EXTENSION_LANGUAGE_MAP[ext] ?? null;
+  if (extLang) {
+    signals.push('extension');
   }
 
-  return null;
+  // Signal 4: Content signature inspection (disambiguates .h headers, extensionless files, or reinforces extension)
+  let contentLang: string | null = null;
+  if (decodedContent) {
+    const sample = decodedContent.slice(0, 2000);
+    if (ext === '.h') {
+      if (/\b(?:namespace|template\s*<|class\s+[A-Za-z_]|std::|#include\s*<iostream>)/.test(sample)) {
+        contentLang = 'C++ Header';
+        signals.push('content_signature');
+      } else if (/#include\s*<[a-z0-9_]+\.h>|\btypedef\s+struct\b/.test(sample)) {
+        contentLang = 'C Header';
+        signals.push('content_signature');
+      }
+    } else if (
+      /\bCREATE\s+(?:TABLE|VIEW|INDEX|PROCEDURE)\b/i.test(sample) ||
+      /\bSELECT\s+[\s\S]+?\bFROM\b/i.test(sample)
+    ) {
+      contentLang = 'SQL';
+      signals.push('content_signature');
+    } else if (/^\s*package\s+[a-zA-Z_][a-zA-Z0-9_]*\s*$/m.test(sample) && /\bfunc\s+/.test(sample)) {
+      contentLang = 'Go';
+      signals.push('content_signature');
+    } else if (/\bfn\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(/.test(sample) && /\b(?:pub\s+|use\s+std::|let\s+mut\b)/.test(sample)) {
+      contentLang = 'Rust';
+      signals.push('content_signature');
+    } else if (/^\s*(?:async\s+)?def\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(/m.test(sample)) {
+      contentLang = 'Python';
+      signals.push('content_signature');
+    } else if (/\busing\s+System\b/.test(sample) && /\b(?:namespace|public\s+class)\b/.test(sample)) {
+      contentLang = 'C#';
+      signals.push('content_signature');
+    } else if (/\bexport\s+(?:interface|type|function|class|const)\b/.test(sample)) {
+      contentLang = ext === '.js' || ext === '.mjs' ? 'JavaScript' : 'TypeScript';
+      signals.push('content_signature');
+    }
+  }
+
+  const resolvedLanguage =
+    (ext === '.h' && contentLang ? contentLang : null) ??
+    extLang ??
+    shebangLang ??
+    contentLang;
+
+  if (resolvedLanguage) {
+    const uniqueSignals = Array.from(new Set(signals));
+    const certainty: CertaintyLevel =
+      uniqueSignals.includes('extension') ||
+      uniqueSignals.includes('filename') ||
+      uniqueSignals.includes('shebang')
+        ? 'verified'
+        : 'inferred';
+    return {
+      language: resolvedLanguage,
+      signals: uniqueSignals,
+      certainty,
+    };
+  }
+
+  if (ext && ext.length > 1 && ext.length <= 10 && decodedContent !== undefined) {
+    return {
+      language: `Unrecognized (${ext})`,
+      signals: ['extension'],
+      certainty: 'unknown',
+    };
+  }
+
+  return { language: null, signals: [], certainty: 'unknown' };
+}
+
+/**
+ * Detects language name from extension, special filename, shebang, or content signatures.
+ */
+export function detectFileLanguage(relativePath: string, decodedContent?: string): string | null {
+  return detectFileLanguageWithSignals(relativePath, decodedContent).language;
 }
 
 /**

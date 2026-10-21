@@ -32,7 +32,9 @@ export type FileRole =
   | 'source'
   | 'test'
   | 'manifest'
+  | 'lockfile'
   | 'build_config'
+  | 'api_spec'
   | 'config_template'
   | 'documentation'
   | 'database_script'
@@ -48,7 +50,14 @@ export type ExclusionReason =
   | 'secret_content_detected'
   | 'binary_or_oversized'
   | 'symlink_escape_blocked'
+  | 'inaccessible_or_permission_denied'
   | 'resource_limit_reached';
+
+export type LanguageDetectionSignal =
+  | 'extension'
+  | 'filename'
+  | 'shebang'
+  | 'content_signature';
 
 export interface IndexedFileRecord {
   readonly relativePath: string;
@@ -57,6 +66,7 @@ export interface IndexedFileRecord {
   readonly lineCount: number | null;
   readonly sha256: string;
   readonly detectedLanguage: string | null;
+  readonly languageDetectionSignals?: readonly LanguageDetectionSignal[];
   readonly role: FileRole;
   readonly isIndexed: boolean;
   readonly exclusionReason?: ExclusionReason;
@@ -138,6 +148,8 @@ export interface SubProject {
   readonly databaseObjects: readonly EvidenceBackedClaim<DatabaseObjectDescriptor>[];
   readonly configTemplates: readonly SourceReference[];
   readonly documentationFiles: readonly SourceReference[];
+  readonly lockfiles?: readonly SourceReference[];
+  readonly apiSpecifications?: readonly SourceReference[];
 }
 
 export interface DependencyEdge {
@@ -186,6 +198,14 @@ export interface RepositoryRecord {
   readonly resourceLimits: ScanResourceLimits;
 }
 
+export interface AnalyzerExecutionEntry {
+  readonly adapterId: string;
+  readonly displayName: string;
+  readonly status: 'ran' | 'skipped' | 'partial_error';
+  readonly filesMatchedCount: number;
+  readonly reasonOrNotes: readonly string[];
+}
+
 export interface RepositorySnapshot {
   readonly snapshotId: string;
   readonly repoId: string;
@@ -200,12 +220,19 @@ export interface RepositorySnapshot {
   readonly externalDependencies: readonly EvidenceBackedClaim<ExternalDependency>[];
   readonly unknownsAndLimitations: readonly string[];
   readonly activeAdapters: readonly string[];
+  readonly skippedAdapters?: readonly {
+    readonly adapterId: string;
+    readonly displayName: string;
+    readonly reason: string;
+  }[];
+  readonly analyzerExecutionLog?: readonly AnalyzerExecutionEntry[];
   readonly stats: {
     readonly totalFilesDiscovered: number;
     readonly totalFilesIndexed: number;
     readonly totalFilesExcluded: number;
     readonly secretExclusionsCount: number;
     readonly symlinkEscapesBlocked: number;
+    readonly inaccessibleFilesCount?: number;
     readonly totalSymbolsExtracted: number;
     readonly analysisDurationMs: number;
   };

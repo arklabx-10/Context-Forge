@@ -37,6 +37,7 @@ import {
   readSafeRepoFile,
   validateAndResolveRepoRoot,
 } from '../infrastructure/repo-access/safe-fs.js';
+import { generateRepositoryMarkdownReport } from '../infrastructure/reporting/markdown-report-generator.js';
 import { analyzeRepository } from '../infrastructure/scanning/repository-analyzer.js';
 import { reviewRepositoryChanges } from './change-review-service.js';
 
@@ -134,6 +135,17 @@ export class ContextForgeWorkspaceService {
 
   public getRepositorySnapshot(repoId: string): RepositorySnapshot | null {
     return this.store.getLatestSnapshot(repoId);
+  }
+
+  public generateRepositoryReport(
+    repoId: string,
+    options?: { readonly includeTimestamps?: boolean }
+  ): string {
+    const snapshot = this.store.getLatestSnapshot(repoId);
+    if (!snapshot) {
+      throw new Error(`No snapshot found for repository ${repoId}`);
+    }
+    return generateRepositoryMarkdownReport(snapshot, options);
   }
 
   public async readRepositoryFile(

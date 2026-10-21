@@ -172,6 +172,12 @@ async function handleApiRequest(
       return;
     }
 
+    if (method === 'GET' && subRoute === 'report') {
+      const reportMarkdown = service.generateRepositoryReport(repoId);
+      sendJson(res, 200, { reportMarkdown });
+      return;
+    }
+
     if (method === 'GET' && subRoute === 'file') {
       const relPath = parsedUrl.searchParams.get('path') ?? '';
       const fileData = await service.readRepositoryFile(repoId, relPath);

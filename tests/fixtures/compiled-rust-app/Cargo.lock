@@ -1,0 +1,4 @@
+# Cargo.lock
+[[package]]
+name = "edge-telemetry-daemon"
+version = "0.2.0"

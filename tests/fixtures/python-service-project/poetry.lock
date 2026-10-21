@@ -1,0 +1,4 @@
+# Poetry lockfile fixture
+[[package]]
+name = "fastapi"
+version = "0.110.0"

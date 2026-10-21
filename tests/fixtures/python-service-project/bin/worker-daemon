@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+import sys
+from src.service import compute_health_score
+
+def run_daemon() -> int:
+    score = compute_health_score(5)
+    return 0 if score > 0 else 1
+
+if __name__ == "__main__":
+    sys.exit(run_daemon())

@@ -1,0 +1,6 @@
+{
+  "name": "malformed-package-manifest",
+  "version": "1.0.0",
+  "dependencies": {
+    "zod": "^3.22.0",
+  /* broken unclosed JSON syntax

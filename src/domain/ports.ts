@@ -174,6 +174,16 @@ export interface ContextExporterPort {
 }
 
 /**
+ * 6. Report Generator Port: Deterministic Repository Analysis Markdown Report contract (No-AI required).
+ */
+export interface ReportGeneratorPort {
+  generateMarkdownReport(
+    snapshot: RepositorySnapshot,
+    options?: { readonly includeTimestamps?: boolean }
+  ): string;
+}
+
+/**
  * Helper to construct a deterministic SourceReference.
  */
 export function createSourceRef(params: {

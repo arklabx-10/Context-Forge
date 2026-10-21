@@ -114,6 +114,7 @@ export interface SafeWalkResult {
   readonly files: readonly DiscoveredFileEntry[];
   readonly symlinkEscapesBlocked: number;
   readonly secretExclusionsCount: number;
+  readonly inaccessibleFilesCount: number;
 }
 
 /**
@@ -303,9 +304,13 @@ export async function validateAndResolveRepoRoot(inputPath: string): Promise<str
  */
 export async function walkRepositorySafely(
   inputRootPath: string,
-  limits: ScanResourceLimits = DEFAULT_SCAN_RESOURCE_LIMITS
+  limits: ScanResourceLimits = DEFAULT_SCAN_RESOURCE_LIMITS,
+  options?: { readonly simulatedInaccessiblePaths?: readonly string[] }
 ): Promise<SafeWalkResult> {
   const canonicalRootPath = await validateAndResolveRepoRoot(inputRootPath);
+  const simulatedInaccessible = new Set(
+    (options?.simulatedInaccessiblePaths ?? []).map((p) => toPosixRelativePath(p))
+  );
 
   // Load root .gitignore and .contextforgeignore if present inside root
   const ignorePatterns: string[] = [...limits.customExcludeGlobs];
@@ -327,6 +332,7 @@ export async function walkRepositorySafely(
   const files: DiscoveredFileEntry[] = [];
   let symlinkEscapesBlocked = 0;
   let secretExclusionsCount = 0;
+  let inaccessibleFilesCount = 0;
 
   async function walkDir(currentAbsDir: string, depth: number): Promise<void> {
     if (depth > limits.maxDirectoryDepth || files.length >= limits.maxTotalFiles) {
@@ -486,10 +492,36 @@ export async function walkRepositorySafely(
       }
 
       // 4. Read file buffer safely and decode
+      if (simulatedInaccessible.has(relPosixPath)) {
+        inaccessibleFilesCount += 1;
+        files.push({
+          relativePath: relPosixPath,
+          absolutePath: absEntryPath,
+          sizeBytes,
+          lineCount: null,
+          sha256: computeSha256(`inaccessible:${relPosixPath}`),
+          isIndexed: false,
+          exclusionReason: 'inaccessible_or_permission_denied',
+          lastModifiedIso,
+        });
+        continue;
+      }
+
       let rawBuffer: Buffer;
       try {
         rawBuffer = await fs.readFile(realEntryPath);
       } catch {
+        inaccessibleFilesCount += 1;
+        files.push({
+          relativePath: relPosixPath,
+          absolutePath: absEntryPath,
+          sizeBytes,
+          lineCount: null,
+          sha256: computeSha256(`inaccessible:${relPosixPath}`),
+          isIndexed: false,
+          exclusionReason: 'inaccessible_or_permission_denied',
+          lastModifiedIso,
+        });
         continue;
       }
 
@@ -549,6 +581,7 @@ export async function walkRepositorySafely(
     files,
     symlinkEscapesBlocked,
     secretExclusionsCount,
+    inaccessibleFilesCount,
   };
 }
 

@@ -1,0 +1,10 @@
+[project]
+name = "python-service-project"
+version = "0.2.0"
+dependencies = [
+  "fastapi>=0.110.0",
+  "pydantic>=2.6.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

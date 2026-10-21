@@ -2,6 +2,7 @@ import path from 'node:path';
 import type {
   AdapterAnalysisFragment,
   AdapterFileContext,
+  DependencyEdge,
   EntryPointDescriptor,
   EvidenceBackedClaim,
   ExternalDependency,
@@ -15,12 +16,12 @@ export class GoRustAdapter implements RepositoryAnalyzerAdapter {
   public readonly adapterId = 'adapter.go_rust';
   public readonly displayName = 'Go (go.mod) & Rust (Cargo.toml) Adapter';
   public readonly description =
-    'Analyzes go.mod and Cargo.toml manifests, Go/Rust entry points, and exported functions/structs.';
+    'Analyzes go.mod and Cargo.toml manifests, Go/Rust entry points, module references, and exported functions/structs.';
   public readonly version = '1.0.0';
   public readonly capabilities = {
     detectsManifests: true,
     extractsSymbols: true,
-    extractsModuleImports: false,
+    extractsModuleImports: true,
     detectsEntryPoints: true,
     detectsApiSurfaces: false,
     analyzesSqlObjects: false,
@@ -206,6 +207,9 @@ export class GoRustAdapter implements RepositoryAnalyzerAdapter {
   private analyzeRustSource(ctx: AdapterFileContext): AdapterAnalysisFragment {
     const symbols: ExtractedSymbol[] = [];
     const entryPoints: EvidenceBackedClaim<EntryPointDescriptor>[] = [];
+    const dependencyEdges: EvidenceBackedClaim<DependencyEdge>[] = [];
+    const dir = path.posix.dirname(ctx.file.relativePath);
+
     for (let i = 0; i < ctx.lines.length; i += 1) {
       const line = ctx.lines[i] ?? '';
       const lineNum = i + 1;
@@ -244,7 +248,61 @@ export class GoRustAdapter implements RepositoryAnalyzerAdapter {
           });
         }
       }
+
+      const structMatch = /^\s*(pub\s+)?(struct|enum)\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(line);
+      if (structMatch?.[2] && structMatch?.[3]) {
+        const name = structMatch[3];
+        const ref = createSourceRef({
+          repoId: ctx.repoId,
+          relativePath: ctx.file.relativePath,
+          fileSha256: ctx.file.sha256,
+          startLine: lineNum,
+          endLine: lineNum,
+          symbolName: name,
+        });
+        symbols.push({
+          name,
+          kind: structMatch[2] === 'enum' ? 'enum' : 'struct',
+          exported: Boolean(structMatch[1]),
+          signature: line.trim().replace(/\{$/, '').trim().slice(0, 120),
+          sourceRef: ref,
+          certainty: 'verified',
+          producerId: this.adapterId,
+        });
+      }
+
+      const modMatch = /^\s*(?:pub\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(line);
+      if (modMatch?.[1]) {
+        const modName = modMatch[1];
+        const candidate1 = path.posix.join(dir === '.' ? '' : dir, `${modName}.rs`);
+        const candidate2 = path.posix.join(dir === '.' ? '' : dir, modName, 'mod.rs');
+        const resolved = ctx.siblingFilePaths.includes(candidate1)
+          ? candidate1
+          : ctx.siblingFilePaths.includes(candidate2)
+            ? candidate2
+            : candidate1;
+        const ref = createSourceRef({
+          repoId: ctx.repoId,
+          relativePath: ctx.file.relativePath,
+          fileSha256: ctx.file.sha256,
+          startLine: lineNum,
+          endLine: lineNum,
+        });
+        dependencyEdges.push({
+          id: `edge:rustmod:${ctx.file.relativePath}:${lineNum}:${resolved}`,
+          value: {
+            fromPathOrModule: ctx.file.relativePath,
+            toPathOrModule: resolved,
+            kind: 'file_import',
+            rawSpecifier: `mod ${modName};`,
+          },
+          certainty: 'verified',
+          evidence: [ref],
+          rationale: `Rust module declaration "mod ${modName};" at ${ctx.file.relativePath}:${lineNum}.`,
+          producerId: this.adapterId,
+        });
+      }
     }
-    return { symbols, entryPoints };
+    return { symbols, entryPoints, dependencyEdges };
   }
 }

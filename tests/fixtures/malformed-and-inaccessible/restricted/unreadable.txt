@@ -1,0 +1,1 @@
+Restricted file used to verify permission-denied / inaccessible file handling during repository scanning.

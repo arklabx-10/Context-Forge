@@ -47,6 +47,12 @@ export class DotNetAdapter implements RepositoryAnalyzerAdapter {
   }
 
   private analyzeCsproj(ctx: AdapterFileContext): AdapterAnalysisFragment {
+    if (!ctx.content.includes('<Project') || !ctx.content.includes('</Project>')) {
+      return {
+        notesOrLimitations: [`Malformed XML project manifest in ${ctx.file.relativePath}: missing <Project>...</Project> root tags.`],
+      };
+    }
+
     const frameworks: EvidenceBackedClaim<string>[] = [];
     const packageManagers: EvidenceBackedClaim<string>[] = [];
     const buildSystems: EvidenceBackedClaim<string>[] = [];

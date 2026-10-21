@@ -1,0 +1,11 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid())
+  actorId   String
+  action    String
+  createdAt DateTime @default(now())
+}

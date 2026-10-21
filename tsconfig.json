@@ -17,5 +17,6 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "tests/**/*", "vite.config.ts"]
+  "include": ["src/**/*", "tests/*.test.ts", "vite.config.ts"],
+  "exclude": ["tests/fixtures/**/*"]
 }
