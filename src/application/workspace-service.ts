@@ -261,7 +261,9 @@ export class ContextForgeWorkspaceService {
     readonly taskDescription: string;
     readonly targetSubProjectId?: string | null;
     readonly seedFilePaths?: readonly string[];
+    readonly excludedFilePaths?: readonly string[];
     readonly assistantTarget?: CodingAssistantTarget;
+    readonly customTemplateInstruction?: string;
     readonly budget?: Partial<ContextBudgetConfig>;
   }): Promise<{
     readonly pack: ContextPack;
@@ -284,8 +286,14 @@ export class ContextForgeWorkspaceService {
         ? { targetSubProjectId: params.targetSubProjectId }
         : {}),
       ...(params.seedFilePaths !== undefined ? { seedFilePaths: params.seedFilePaths } : {}),
+      ...(params.excludedFilePaths !== undefined
+        ? { excludedFilePaths: params.excludedFilePaths }
+        : {}),
       ...(params.assistantTarget !== undefined
         ? { assistantTarget: params.assistantTarget }
+        : {}),
+      ...(params.customTemplateInstruction !== undefined
+        ? { customTemplateInstruction: params.customTemplateInstruction }
         : {}),
       ...(params.budget !== undefined ? { budget: params.budget } : {}),
     });

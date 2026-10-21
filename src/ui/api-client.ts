@@ -142,7 +142,9 @@ export const apiClient = {
       taskDescription: string;
       targetSubProjectId?: string | null;
       seedFilePaths?: string[];
+      excludedFilePaths?: string[];
       assistantTarget?: CodingAssistantTarget;
+      customTemplateInstruction?: string;
       budget?: Partial<ContextBudgetConfig>;
     }
   ) =>

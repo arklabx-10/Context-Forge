@@ -160,9 +160,14 @@ export function App(): React.ReactElement {
   );
   const [targetSubProjectId, setTargetSubProjectId] = useState<string>('');
   const [seedFiles, setSeedFiles] = useState<readonly string[]>([]);
+  const [excludedPackFiles, setExcludedPackFiles] = useState<readonly string[]>([]);
   const [assistantTarget, setAssistantTarget] = useState<CodingAssistantTarget>('universal');
+  const [customTemplateInstruction, setCustomTemplateInstruction] = useState<string>('');
   const [maxTotalChars, setMaxTotalChars] = useState<number>(28000);
   const [maxFilesCount, setMaxFilesCount] = useState<number>(10);
+  const [maxCharsPerFile, setMaxCharsPerFile] = useState<number>(6000);
+  const [maxPackFileSizeKb, setMaxPackFileSizeKb] = useState<number>(512);
+  const [staleFilePolicy, setStaleFilePolicy] = useState<'flag' | 'reject'>('flag');
   const [includeTests, setIncludeTests] = useState<boolean>(true);
   const [generatedPack, setGeneratedPack] = useState<{
     pack: ContextPack;
@@ -417,22 +422,33 @@ export function App(): React.ReactElement {
     }
   }, [activeView, activeRepoId, searchScope, searchKind]);
 
-  const handleGenerateContextPack = async () => {
+  const handleGenerateContextPack = async (overrides?: {
+    readonly seedFilePaths?: readonly string[];
+    readonly excludedFilePaths?: readonly string[];
+  }) => {
     if (!activeRepoId) return;
     setLoading(true);
     setErrorBanner(null);
+    const nextSeeds = overrides?.seedFilePaths ?? seedFiles;
+    const nextExcluded = overrides?.excludedFilePaths ?? excludedPackFiles;
     try {
       const res = await apiClient.generateContextPack(activeRepoId, {
         taskType,
         taskTitle,
         taskDescription,
         targetSubProjectId: targetSubProjectId || null,
-        seedFilePaths: [...seedFiles],
+        seedFilePaths: [...nextSeeds],
+        excludedFilePaths: [...nextExcluded],
         assistantTarget,
+        ...(customTemplateInstruction.trim()
+          ? { customTemplateInstruction: customTemplateInstruction.trim() }
+          : {}),
         budget: {
           maxTotalChars,
           maxFilesCount,
-          maxCharsPerFile: Math.min(8000, Math.floor(maxTotalChars / 2)),
+          maxCharsPerFile,
+          maxFileSizeBytes: Math.max(1024, maxPackFileSizeKb * 1024),
+          staleFilePolicy,
           includeTests,
           includeKnowledgeAndAdrs: true,
           includeDependencyGraphSummary: true,
@@ -451,6 +467,12 @@ export function App(): React.ReactElement {
 
   const toggleSeedFile = (relPath: string) => {
     setSeedFiles((prev) =>
+      prev.includes(relPath) ? prev.filter((p) => p !== relPath) : [...prev, relPath]
+    );
+  };
+
+  const toggleExcludedPackFile = (relPath: string) => {
+    setExcludedPackFiles((prev) =>
       prev.includes(relPath) ? prev.filter((p) => p !== relPath) : [...prev, relPath]
     );
   };
@@ -2586,6 +2608,18 @@ export function App(): React.ReactElement {
                     </select>
                   </div>
 
+                  <div>
+                    <label className="field-label">
+                      Custom Agent Template Instructions (Optional)
+                    </label>
+                    <input
+                      className="input"
+                      placeholder="e.g. Prefer minimal diffs and preserve existing public signatures"
+                      value={customTemplateInstruction}
+                      onChange={(e) => setCustomTemplateInstruction(e.target.value)}
+                    />
+                  </div>
+
                   <div className="form-grid">
                     <div>
                       <label className="field-label">Max Context Budget (Chars)</label>
@@ -2614,6 +2648,52 @@ export function App(): React.ReactElement {
                         }
                       />
                     </div>
+                  </div>
+
+                  <div className="form-grid">
+                    <div>
+                      <label className="field-label">Max Chars Per File Excerpt</label>
+                      <input
+                        type="number"
+                        className="input mono"
+                        min={500}
+                        max={50000}
+                        step={500}
+                        value={maxCharsPerFile}
+                        onChange={(e) =>
+                          setMaxCharsPerFile(Number.parseInt(e.target.value || '6000', 10))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="field-label">Max Source File Size (KB)</label>
+                      <input
+                        type="number"
+                        className="input mono"
+                        min={4}
+                        max={10240}
+                        value={maxPackFileSizeKb}
+                        onChange={(e) =>
+                          setMaxPackFileSizeKb(Number.parseInt(e.target.value || '512', 10))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="field-label">Stale File Policy</label>
+                    <select
+                      className="select"
+                      value={staleFilePolicy}
+                      onChange={(e) => setStaleFilePolicy(e.target.value as 'flag' | 'reject')}
+                    >
+                      <option value="flag">
+                        Flag Stale Files (Warn if modified on disk since snapshot)
+                      </option>
+                      <option value="reject">
+                        Reject Stale Files (Omit files modified/deleted since snapshot)
+                      </option>
+                    </select>
                   </div>
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
@@ -2646,6 +2726,26 @@ export function App(): React.ReactElement {
                       </div>
                     )}
                   </div>
+
+                  {excludedPackFiles.length > 0 && (
+                    <div>
+                      <div className="field-label">
+                        User-Excluded Pack Files ({excludedPackFiles.length})
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {excludedPackFiles.map((ef) => (
+                          <button
+                            key={ef}
+                            type="button"
+                            className="source-ref-pill"
+                            onClick={() => toggleExcludedPackFile(ef)}
+                          >
+                            {ef} (Restore) ✕
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <button
                     type="button"
@@ -2719,21 +2819,40 @@ export function App(): React.ReactElement {
                     )}
 
                     <div style={{ marginBottom: '12px' }}>
-                      <div className="field-label">Deterministic File Ranking Breakdown</div>
+                      <div className="field-label">
+                        Proposed Context Pack Files — Why Each File Was Selected (Revision:{' '}
+                        <code>{generatedPack.pack.sourceRevision ?? generatedPack.pack.snapshotId}</code>)
+                      </div>
                       <table className="data-table">
                         <thead>
                           <tr>
-                            <th>Rank & File</th>
+                            <th>Rank & Source Location</th>
                             <th>Role</th>
                             <th>Score</th>
-                            <th>Rule Contributions</th>
+                            <th>Why Selected (Rule & Evidence)</th>
+                            <th>Edit Pack</th>
                           </tr>
                         </thead>
                         <tbody>
                           {generatedPack.pack.includedItems.map((item, idx) => (
                             <tr key={item.relativePath}>
                               <td className="mono">
-                                #{idx + 1} {item.relativePath}
+                                <button
+                                  type="button"
+                                  className="source-ref-pill"
+                                  onClick={() => void openSourceReference(item.sourceRef)}
+                                >
+                                  #{idx + 1} {item.relativePath}:{item.startLine}-{item.endLine}
+                                </button>
+                                {item.isStaleComparedToDisk && (
+                                  <span
+                                    className="badge badge-danger"
+                                    style={{ marginLeft: '6px' }}
+                                    title={item.stalenessWarning}
+                                  >
+                                    STALE
+                                  </span>
+                                )}
                               </td>
                               <td className="mono" style={{ fontSize: '11px' }}>
                                 {item.role}
@@ -2743,8 +2862,31 @@ export function App(): React.ReactElement {
                               </td>
                               <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                                 {item.scoreBreakdown
-                                  .map((b) => `${b.ruleId} (+${b.points})`)
+                                  .map((b) => `${b.ruleId} (+${b.points}): ${b.reason}`)
                                   .join(' · ')}
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="btn btn-danger"
+                                  style={{ padding: '2px 8px', fontSize: '11px' }}
+                                  onClick={() => {
+                                    const nextExcl = excludedPackFiles.includes(item.relativePath)
+                                      ? excludedPackFiles
+                                      : [...excludedPackFiles, item.relativePath];
+                                    const nextSeeds = seedFiles.filter(
+                                      (s) => s !== item.relativePath
+                                    );
+                                    setExcludedPackFiles(nextExcl);
+                                    setSeedFiles(nextSeeds);
+                                    void handleGenerateContextPack({
+                                      seedFilePaths: nextSeeds,
+                                      excludedFilePaths: nextExcl,
+                                    });
+                                  }}
+                                >
+                                  Exclude
+                                </button>
                               </td>
                             </tr>
                           ))}

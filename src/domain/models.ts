@@ -280,6 +280,8 @@ export interface ContextBudgetConfig {
   readonly maxTotalChars: number;
   readonly maxFilesCount: number;
   readonly maxCharsPerFile: number;
+  readonly maxFileSizeBytes?: number;
+  readonly staleFilePolicy?: 'flag' | 'reject';
   readonly includeTests: boolean;
   readonly includeKnowledgeAndAdrs: boolean;
   readonly includeDependencyGraphSummary: boolean;
@@ -313,13 +315,30 @@ export interface ContextSelectionItem {
   readonly contentExcerpt: string;
   readonly symbolsInFile: readonly string[];
   readonly promptInjectionAlerts: readonly PromptInjectionAlert[];
+  readonly isStaleComparedToDisk?: boolean;
+  readonly stalenessWarning?: string;
 }
 
 export interface OmittedContextItem {
   readonly relativePath: string;
   readonly relevanceScore: number;
-  readonly reason: 'budget_exceeded' | 'max_files_reached' | 'low_relevance' | 'excluded_sensitive';
+  readonly reason:
+    | 'budget_exceeded'
+    | 'max_files_reached'
+    | 'low_relevance'
+    | 'excluded_sensitive'
+    | 'excluded_by_user'
+    | 'file_too_large'
+    | 'stale_file_rejected';
   readonly scoreBreakdown: readonly ScoreContribution[];
+}
+
+export interface ContextPackAiInterpretation {
+  readonly providerId: string;
+  readonly modelName: string;
+  readonly certainty: 'ai_generated' | 'verified';
+  readonly summaryMarkdown: string;
+  readonly generatedAtIso: string;
 }
 
 export interface ContextPack {
@@ -327,22 +346,27 @@ export interface ContextPack {
   readonly repoId: string;
   readonly repoName: string;
   readonly snapshotId: string;
+  readonly sourceRevision?: string | null;
   readonly createdAtIso: string;
   readonly taskType: DevelopmentTaskType;
   readonly taskTitle: string;
   readonly taskDescription: string;
   readonly targetSubProjectId: string | null;
   readonly seedFilePaths: readonly string[];
+  readonly excludedFilePaths?: readonly string[];
   readonly assistantTarget: CodingAssistantTarget;
+  readonly customTemplateInstruction?: string;
   readonly budget: ContextBudgetConfig;
   readonly usedChars: number;
   readonly estimatedTokens: number;
   readonly architectureSummaryClaims: readonly EvidenceBackedClaim<string>[];
+  readonly relevantDependencies?: readonly EvidenceBackedClaim<string>[];
   readonly includedItems: readonly ContextSelectionItem[];
   readonly omittedItems: readonly OmittedContextItem[];
   readonly applicableKnowledge: readonly KnowledgeEntry[];
   readonly constraintsAndSafetyNotes: readonly string[];
   readonly injectionAlerts: readonly PromptInjectionAlert[];
+  readonly aiInterpretation?: ContextPackAiInterpretation;
 }
 
 // ============================================================================
@@ -489,6 +513,7 @@ export interface AiGenerationRequest {
   readonly untrustedContextPackText: string;
   readonly disclosedFilePaths: readonly string[];
   readonly maxOutputTokens?: number;
+  readonly signal?: AbortSignal;
 }
 
 export interface AiGenerationResponse {

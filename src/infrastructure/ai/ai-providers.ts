@@ -10,7 +10,7 @@ import type {
 } from '../../domain/index.js';
 import type { ContextForgeSqliteStore } from '../persistence/sqlite-store.js';
 import { computeSha256 } from '../repo-access/safe-fs.js';
-import { redactSecretsInText } from '../repo-access/secret-scanner.js';
+import { isSensitiveFilePath, redactSecretsInText } from '../repo-access/secret-scanner.js';
 
 export class ConsentRequiredError extends Error {
   public constructor(message: string) {
@@ -26,10 +26,41 @@ export class AiInputSizeExceededError extends Error {
   }
 }
 
+export class AiSensitiveFileDisclosedError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'AiSensitiveFileDisclosedError';
+  }
+}
+
 export class AiProviderExecutionError extends Error {
   public constructor(message: string) {
     super(message);
     this.name = 'AiProviderExecutionError';
+  }
+}
+
+export class AiRateLimitError extends AiProviderExecutionError {
+  public readonly retryAfterSeconds: number | null;
+
+  public constructor(message: string, retryAfterSeconds: number | null = null) {
+    super(message);
+    this.name = 'AiRateLimitError';
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+export class AiTimeoutError extends AiProviderExecutionError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'AiTimeoutError';
+  }
+}
+
+export class AiRequestCancelledError extends AiProviderExecutionError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'AiRequestCancelledError';
   }
 }
 
@@ -58,6 +89,18 @@ export class NoOpDeterministicProvider implements AiProviderPort {
     request: AiGenerationRequest,
     _consentToken: OutboundConsentToken
   ): Promise<AiGenerationResponse> {
+    if (request.signal?.aborted) {
+      throw new AiRequestCancelledError('AI generation request was cancelled before execution.');
+    }
+
+    for (const disclosed of request.disclosedFilePaths) {
+      if (isSensitiveFilePath(disclosed)) {
+        throw new AiSensitiveFileDisclosedError(
+          `Refusing to include sensitive or secret file "${disclosed}" in AI context generation.`
+        );
+      }
+    }
+
     const startMs = Date.now();
     const fileList =
       request.disclosedFilePaths.length > 0
@@ -89,7 +132,8 @@ export class NoOpDeterministicProvider implements AiProviderPort {
 
 /**
  * External AI Provider Adapter (OpenAI-compatible / Anthropic-compatible / Local Ollama).
- * Strictly enforces OutboundConsentToken verification before any network request can occur.
+ * Strictly enforces OutboundConsentToken verification, sensitive-file blocking, input size bounds,
+ * rate-limit handling, cancellation, and timeouts before any network request can occur.
  */
 export class ConsentGatedExternalAiProvider implements AiProviderPort {
   public readonly providerId: string;
@@ -112,8 +156,14 @@ export class ConsentGatedExternalAiProvider implements AiProviderPort {
         : config.activeProviderId === 'local_ollama'
           ? `Ollama Local LLM (${config.modelName})`
           : `OpenAI-Compatible Adapter (${config.modelName})`;
-    if (apiKey !== undefined) {
-      this.apiKey = apiKey;
+
+    const resolvedKey =
+      apiKey ??
+      process.env.CONTEXTFORGE_AI_API_KEY ??
+      process.env.OPENAI_API_KEY ??
+      process.env.ANTHROPIC_API_KEY;
+    if (resolvedKey !== undefined) {
+      this.apiKey = resolvedKey;
     }
   }
 
@@ -132,6 +182,12 @@ export class ConsentGatedExternalAiProvider implements AiProviderPort {
     request: AiGenerationRequest,
     consentToken: OutboundConsentToken
   ): Promise<AiGenerationResponse> {
+    if (request.signal?.aborted) {
+      throw new AiRequestCancelledError(
+        `AI provider "${this.providerId}" request was cancelled by caller before transmission.`
+      );
+    }
+
     const startMs = Date.now();
     const { redactedPayloadText, payloadSha256 } = buildRedactedOutboundPayload(request);
 
@@ -169,7 +225,19 @@ export class ConsentGatedExternalAiProvider implements AiProviderPort {
     });
 
     const controller = new AbortController();
-    const timeoutHandle = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    let timedOut = false;
+    let cancelledByCaller = false;
+
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.config.timeoutMs);
+
+    const onCallerAbort = () => {
+      cancelledByCaller = true;
+      controller.abort();
+    };
+    request.signal?.addEventListener('abort', onCallerAbort, { once: true });
 
     try {
       const headers: Record<string, string> = {
@@ -208,6 +276,23 @@ export class ConsentGatedExternalAiProvider implements AiProviderPort {
         signal: controller.signal,
       });
 
+      if (response.status === 429) {
+        const retryHeader = response.headers.get('retry-after');
+        const retrySecs = retryHeader ? Number.parseInt(retryHeader, 10) : null;
+        throw new AiRateLimitError(
+          `AI provider "${this.providerId}" rate limit exceeded (HTTP 429)${
+            retrySecs && !Number.isNaN(retrySecs) ? `; retry after ${retrySecs}s` : ''
+          }.`,
+          retrySecs && !Number.isNaN(retrySecs) ? retrySecs : null
+        );
+      }
+
+      if (response.status === 408 || response.status === 504) {
+        throw new AiTimeoutError(
+          `AI provider "${this.providerId}" timed out with HTTP ${response.status}.`
+        );
+      }
+
       if (!response.ok) {
         throw new Error(`AI Provider returned HTTP ${response.status}`);
       }
@@ -234,12 +319,26 @@ export class ConsentGatedExternalAiProvider implements AiProviderPort {
         durationMs: Math.max(1, Date.now() - startMs),
       };
     } catch (err) {
+      if (err instanceof AiRateLimitError || err instanceof AiTimeoutError || err instanceof AiRequestCancelledError) {
+        throw err;
+      }
+      if (cancelledByCaller || request.signal?.aborted) {
+        throw new AiRequestCancelledError(
+          `AI provider "${this.providerId}" request was cancelled by caller.`
+        );
+      }
+      if (timedOut) {
+        throw new AiTimeoutError(
+          `AI provider "${this.providerId}" timed out after ${this.config.timeoutMs} ms without leaking source contents.`
+        );
+      }
       const reason = err instanceof Error ? err.message : 'Unknown provider error';
       throw new AiProviderExecutionError(
         `AI provider "${this.providerId}" failed safely without leaking source contents: ${reason}`
       );
     } finally {
       clearTimeout(timeoutHandle);
+      request.signal?.removeEventListener('abort', onCallerAbort);
     }
   }
 }
@@ -249,6 +348,14 @@ export function buildRedactedOutboundPayload(request: AiGenerationRequest): {
   readonly payloadSha256: string;
   readonly redactedSecretsCount: number;
 } {
+  for (const disclosedPath of request.disclosedFilePaths) {
+    if (isSensitiveFilePath(disclosedPath)) {
+      throw new AiSensitiveFileDisclosedError(
+        `Outbound AI request blocked: sensitive or secret file "${disclosedPath}" cannot be sent to an external AI provider.`
+      );
+    }
+  }
+
   const combined = [
     `# TASK PROMPT`,
     request.taskPrompt,

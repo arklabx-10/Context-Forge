@@ -249,7 +249,9 @@ async function handleApiRequest(
         taskDescription: string;
         targetSubProjectId?: string | null;
         seedFilePaths?: string[];
+        excludedFilePaths?: string[];
         assistantTarget?: CodingAssistantTarget;
+        customTemplateInstruction?: string;
         budget?: Partial<ContextBudgetConfig>;
       }>(req);
       const result = await service.generateContextPack({

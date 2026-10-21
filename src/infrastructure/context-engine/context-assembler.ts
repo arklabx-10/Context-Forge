@@ -22,6 +22,8 @@ export const DEFAULT_CONTEXT_BUDGET: ContextBudgetConfig = {
   maxTotalChars: 32000,
   maxFilesCount: 12,
   maxCharsPerFile: 6000,
+  maxFileSizeBytes: 512 * 1024,
+  staleFilePolicy: 'flag',
   includeTests: true,
   includeKnowledgeAndAdrs: true,
   includeDependencyGraphSummary: true,
@@ -75,7 +77,9 @@ export async function assembleContextPack(params: {
   readonly taskDescription: string;
   readonly targetSubProjectId?: string | null;
   readonly seedFilePaths?: readonly string[];
+  readonly excludedFilePaths?: readonly string[];
   readonly assistantTarget?: CodingAssistantTarget;
+  readonly customTemplateInstruction?: string;
   readonly budget?: Partial<ContextBudgetConfig>;
   readonly deterministicIdAndTimestamp?: {
     readonly packId: string;
@@ -89,6 +93,9 @@ export async function assembleContextPack(params: {
 
   const assistantTarget: CodingAssistantTarget = params.assistantTarget ?? 'universal';
   const seedSet = new Set((params.seedFilePaths ?? []).map((p) => p.replace(/\\/g, '/')));
+  const userExcludedSet = new Set(
+    (params.excludedFilePaths ?? []).map((p) => p.replace(/\\/g, '/'))
+  );
   const indexedPathsSet = new Set(
     params.snapshot.files.filter((f) => f.isIndexed).map((f) => f.relativePath)
   );
@@ -171,6 +178,42 @@ export async function assembleContextPack(params: {
           ],
         });
       }
+      continue;
+    }
+
+    if (userExcludedSet.has(file.relativePath)) {
+      omittedItems.push({
+        relativePath: file.relativePath,
+        relevanceScore: 0,
+        reason: 'excluded_by_user',
+        scoreBreakdown: [
+          {
+            ruleId: 'user_exclusion',
+            points: 0,
+            reason: 'Explicitly excluded from context pack by user.',
+          },
+        ],
+      });
+      continue;
+    }
+
+    if (
+      budget.maxFileSizeBytes !== undefined &&
+      file.sizeBytes > budget.maxFileSizeBytes &&
+      !seedSet.has(file.relativePath)
+    ) {
+      omittedItems.push({
+        relativePath: file.relativePath,
+        relevanceScore: 0,
+        reason: 'file_too_large',
+        scoreBreakdown: [
+          {
+            ruleId: 'max_file_size_exceeded',
+            points: 0,
+            reason: `File size (${file.sizeBytes} bytes) exceeds context pack maxFileSizeBytes (${budget.maxFileSizeBytes} bytes).`,
+          },
+        ],
+      });
       continue;
     }
 
@@ -378,15 +421,60 @@ export async function assembleContextPack(params: {
       continue;
     }
 
-    // Load file content from in-memory map or safe disk reader
+    // Load file content from in-memory map or safe disk reader and verify SHA-256 freshness
     let rawContent = params.indexedFileContents?.get(candidate.file.relativePath);
+    let isStaleComparedToDisk = false;
+    let stalenessWarning: string | undefined;
+
     if (rawContent === undefined) {
       const diskRead = await readSafeRepoFile(
         params.snapshot.rootPath,
         candidate.file.relativePath,
-        budget.maxCharsPerFile * 4
+        Math.max(budget.maxCharsPerFile * 4, candidate.file.sizeBytes + 4096)
       );
-      rawContent = diskRead?.content ?? '';
+      if (!diskRead) {
+        isStaleComparedToDisk = true;
+        stalenessWarning = `File "${candidate.file.relativePath}" was deleted or became unreadable after snapshot ${params.snapshot.snapshotId}.`;
+        if (budget.staleFilePolicy === 'reject') {
+          omittedItems.push({
+            relativePath: candidate.file.relativePath,
+            relevanceScore: candidate.score,
+            reason: 'stale_file_rejected',
+            scoreBreakdown: [
+              ...candidate.breakdown,
+              {
+                ruleId: 'stale_file_rejected',
+                points: 0,
+                reason: stalenessWarning,
+              },
+            ],
+          });
+          continue;
+        }
+        rawContent = '';
+      } else {
+        if (diskRead.sha256 !== candidate.file.sha256) {
+          isStaleComparedToDisk = true;
+          stalenessWarning = `File "${candidate.file.relativePath}" was modified on disk since snapshot ${params.snapshot.snapshotId} (snapshot SHA-256: ${candidate.file.sha256.slice(0, 10)}, current disk SHA-256: ${diskRead.sha256.slice(0, 10)}).`;
+          if (budget.staleFilePolicy === 'reject') {
+            omittedItems.push({
+              relativePath: candidate.file.relativePath,
+              relevanceScore: candidate.score,
+              reason: 'stale_file_rejected',
+              scoreBreakdown: [
+                ...candidate.breakdown,
+                {
+                  ruleId: 'stale_file_rejected',
+                  points: 0,
+                  reason: stalenessWarning,
+                },
+              ],
+            });
+            continue;
+          }
+        }
+        rawContent = diskRead.content;
+      }
     }
 
     const maxAllowedForThisFile = Math.min(budget.maxCharsPerFile, remainingBudget);
@@ -442,9 +530,53 @@ export async function assembleContextPack(params: {
       contentExcerpt: excerpt,
       symbolsInFile: symbolsByFile.get(candidate.file.relativePath) ?? [],
       promptInjectionAlerts: injectionAlerts,
+      ...(isStaleComparedToDisk ? { isStaleComparedToDisk: true } : {}),
+      ...(stalenessWarning ? { stalenessWarning } : {}),
     });
 
     usedChars += excerpt.length + 140;
+  }
+
+  // Extract relevant dependency claims (internal module edges & external packages) for the selected files
+  const includedPathSet = new Set(includedItems.map((i) => i.relativePath));
+  const includedSubProjectSet = new Set(
+    includedItems.map((i) => i.subProjectId).filter((id): id is string => Boolean(id))
+  );
+  const relevantDependencies: EvidenceBackedClaim<string>[] = [];
+
+  if (budget.includeDependencyGraphSummary) {
+    for (const edge of params.snapshot.dependencyEdges) {
+      if (
+        includedPathSet.has(edge.value.fromPathOrModule) ||
+        includedPathSet.has(edge.value.toPathOrModule) ||
+        edge.value.kind === 'sql_foreign_key'
+      ) {
+        relevantDependencies.push({
+          id: `depclaim:${edge.id}`,
+          value: `${edge.value.fromPathOrModule} -> ${edge.value.toPathOrModule} (${edge.value.kind})`,
+          certainty: edge.certainty,
+          evidence: edge.evidence,
+          rationale: edge.rationale,
+          producerId: edge.producerId,
+        });
+      }
+    }
+
+    for (const ext of params.snapshot.externalDependencies) {
+      if (
+        includedSubProjectSet.size === 0 ||
+        includedSubProjectSet.has(ext.value.subProjectId)
+      ) {
+        relevantDependencies.push({
+          id: `extdepclaim:${ext.id}`,
+          value: `External package ${ext.value.name}@${ext.value.versionConstraint} (${ext.value.ecosystem}, ${ext.value.scope})`,
+          certainty: ext.certainty,
+          evidence: ext.evidence,
+          rationale: ext.rationale,
+          producerId: ext.producerId,
+        });
+      }
+    }
   }
 
   const constraintsAndSafetyNotes: string[] = [
@@ -452,6 +584,12 @@ export async function assembleContextPack(params: {
     'Current source code files and verified SourceReferences always take precedence over project notes or AI-generated summaries.',
     'Do not invent file paths, build commands, dependencies, or database columns that are not present in the verified inventory.',
   ];
+
+  for (const item of includedItems) {
+    if (item.stalenessWarning) {
+      constraintsAndSafetyNotes.push(`Stale File Warning: ${item.stalenessWarning}`);
+    }
+  }
 
   if (params.snapshot.unknownsAndLimitations.length > 0) {
     constraintsAndSafetyNotes.push(
@@ -466,6 +604,7 @@ export async function assembleContextPack(params: {
     repoId: params.snapshot.repoId,
     repoName: params.snapshot.repoName,
     snapshotId: params.snapshot.snapshotId,
+    sourceRevision: params.snapshot.gitMetadata.headCommitSha ?? params.snapshot.snapshotId,
     createdAtIso:
       params.deterministicIdAndTimestamp?.createdAtIso ?? new Date().toISOString(),
     taskType: params.taskType,
@@ -473,11 +612,16 @@ export async function assembleContextPack(params: {
     taskDescription: params.taskDescription,
     targetSubProjectId: effectiveTargetSubProjectId,
     seedFilePaths: Array.from(seedSet).sort(),
+    excludedFilePaths: Array.from(userExcludedSet).sort(),
     assistantTarget,
+    ...(params.customTemplateInstruction
+      ? { customTemplateInstruction: params.customTemplateInstruction }
+      : {}),
     budget,
     usedChars,
     estimatedTokens: Math.ceil(usedChars / 4),
     architectureSummaryClaims,
+    relevantDependencies: relevantDependencies.slice(0, 30),
     includedItems,
     omittedItems,
     applicableKnowledge,
