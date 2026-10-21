@@ -115,10 +115,20 @@ export interface ApiSurfaceDescriptor {
   readonly routeOrSignature: string;
 }
 
+export type SqlDialectName = 'PostgreSQL' | 'MySQL' | 'TSQL' | 'SQLite' | 'AnsiSQL' | 'Prisma';
+
 export interface DatabaseObjectDescriptor {
-  readonly objectType: 'table' | 'view' | 'index' | 'migration' | 'procedure' | 'schema_model';
+  readonly objectType:
+    | 'table'
+    | 'view'
+    | 'index'
+    | 'migration'
+    | 'procedure'
+    | 'function'
+    | 'trigger'
+    | 'schema_model';
   readonly name: string;
-  readonly dialectHint?: string;
+  readonly dialectHint?: SqlDialectName | string;
   readonly columnsOrFields?: readonly string[];
 }
 
@@ -155,7 +165,13 @@ export interface SubProject {
 export interface DependencyEdge {
   readonly fromPathOrModule: string;
   readonly toPathOrModule: string;
-  readonly kind: 'file_import' | 'subproject_reference' | 'sql_foreign_key' | 'config_reference';
+  readonly kind:
+    | 'file_import'
+    | 'subproject_reference'
+    | 'sql_foreign_key'
+    | 'sql_table_reference'
+    | 'sql_migration_sequence'
+    | 'config_reference';
   readonly rawSpecifier?: string;
 }
 

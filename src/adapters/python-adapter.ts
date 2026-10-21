@@ -18,15 +18,34 @@ export class PythonAdapter implements RepositoryAnalyzerAdapter {
   public readonly displayName = 'Python & PyProject Adapter';
   public readonly description =
     'Analyzes pyproject.toml, requirements.txt, Python classes/functions, module imports, and FastAPI/Flask endpoints.';
-  public readonly version = '1.0.0';
+  public readonly version = '1.1.0';
   public readonly capabilities = {
     detectsManifests: true,
+    detectsLanguagesAndFrameworks: true,
     extractsSymbols: true,
     extractsModuleImports: true,
     detectsEntryPoints: true,
     detectsApiSurfaces: true,
     analyzesSqlObjects: false,
+    extractsBuildAndTestMetadata: true,
     inspectsDiffRisks: false,
+  } as const;
+
+  public readonly supportedInputs = {
+    extensions: ['.py'],
+    filenamesOrGlobs: ['pyproject.toml', 'requirements.txt', '*.py'],
+    ecosystemsOrDialects: ['Python 3.x', 'PyPI / pip', 'Poetry', 'PEP 621'],
+  } as const;
+
+  public readonly limitations = [
+    'Dynamic module imports via importlib.import_module() or __import__() cannot be statically resolved and are reported as incomplete.',
+    'Metaclass-generated attributes and runtime-mutated sys.path entries are not evaluated.',
+  ] as const;
+
+  public readonly requiredResources = {
+    maxFileSizeBytes: 1_048_576,
+    requiresSiblingFileIndex: true,
+    executionMode: 'in_process_safe_static',
   } as const;
 
   public supportsFile(file: IndexedFileRecord): boolean {
@@ -236,6 +255,7 @@ export class PythonAdapter implements RepositoryAnalyzerAdapter {
     const dependencyEdges: EvidenceBackedClaim<DependencyEdge>[] = [];
     const apiSurfaces: EvidenceBackedClaim<ApiSurfaceDescriptor>[] = [];
     const entryPoints: EvidenceBackedClaim<EntryPointDescriptor>[] = [];
+    const notesOrLimitations: string[] = [];
 
     for (let i = 0; i < ctx.lines.length; i += 1) {
       const line = ctx.lines[i] ?? '';
@@ -250,6 +270,16 @@ export class PythonAdapter implements RepositoryAnalyzerAdapter {
           ...(symbolName ? { symbolName } : {}),
           ...(ctx.commitSha ? { commitSha: ctx.commitSha } : {}),
         });
+
+      // Report dynamic Python imports honestly rather than inventing relationships
+      if (
+        !line.trim().startsWith('#') &&
+        /\b(?:importlib\.import_module|__import__)\s*\(/.test(line)
+      ) {
+        notesOrLimitations.push(
+          `Dynamic Python import (${line.trim().slice(0, 60)}) at ${ctx.file.relativePath}:${lineNum} cannot be statically resolved; dependency relationship omitted rather than invented.`
+        );
+      }
 
       // 1. Python function / class definitions
       const defMatch = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/.exec(line);
@@ -342,6 +372,7 @@ export class PythonAdapter implements RepositoryAnalyzerAdapter {
       dependencyEdges,
       apiSurfaces,
       entryPoints,
+      ...(notesOrLimitations.length > 0 ? { notesOrLimitations } : {}),
     };
   }
 

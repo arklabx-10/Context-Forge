@@ -18,15 +18,35 @@ export class NodeTypeScriptAdapter implements RepositoryAnalyzerAdapter {
   public readonly displayName = 'Node.js / TypeScript / JavaScript Adapter';
   public readonly description =
     'Analyzes package.json manifests, workspaces, TS/JS symbols, module imports, and HTTP/RPC routes.';
-  public readonly version = '1.0.0';
+  public readonly version = '1.1.0';
   public readonly capabilities = {
     detectsManifests: true,
+    detectsLanguagesAndFrameworks: true,
     extractsSymbols: true,
     extractsModuleImports: true,
     detectsEntryPoints: true,
     detectsApiSurfaces: true,
     analyzesSqlObjects: false,
+    extractsBuildAndTestMetadata: true,
     inspectsDiffRisks: false,
+  } as const;
+
+  public readonly supportedInputs = {
+    extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
+    filenamesOrGlobs: ['package.json', '*.ts', '*.tsx', '*.js', '*.jsx', '*.mjs', '*.cjs'],
+    ecosystemsOrDialects: ['Node.js', 'TypeScript', 'JavaScript (ESM/CJS)', 'npm/pnpm/yarn/bun'],
+  } as const;
+
+  public readonly limitations = [
+    'Dynamic import() or require() calls with non-literal expressions cannot be statically resolved and are reported as incomplete rather than fabricated.',
+    'Path aliases defined only in external build plugins without relative specifiers are preserved as raw module specifiers.',
+    'Runtime-computed Express/Fastify route prefixes are not evaluated.',
+  ] as const;
+
+  public readonly requiredResources = {
+    maxFileSizeBytes: 1_048_576,
+    requiresSiblingFileIndex: true,
+    executionMode: 'in_process_safe_static',
   } as const;
 
   public supportsFile(file: IndexedFileRecord): boolean {
@@ -275,10 +295,11 @@ export class NodeTypeScriptAdapter implements RepositoryAnalyzerAdapter {
     const dependencyEdges: EvidenceBackedClaim<DependencyEdge>[] = [];
     const apiSurfaces: EvidenceBackedClaim<ApiSurfaceDescriptor>[] = [];
     const entryPoints: EvidenceBackedClaim<EntryPointDescriptor>[] = [];
+    const notesOrLimitations: string[] = [];
 
     const dir = path.posix.dirname(ctx.file.relativePath);
 
-    // Scan line by line for symbols, imports, and HTTP route declarations
+    // Scan line by line for symbols, imports, dynamic expressions, and HTTP route declarations
     for (let i = 0; i < ctx.lines.length; i += 1) {
       const line = ctx.lines[i] ?? '';
       const lineNum = i + 1;
@@ -293,6 +314,22 @@ export class NodeTypeScriptAdapter implements RepositoryAnalyzerAdapter {
           ...(symbolName ? { symbolName } : {}),
           ...(ctx.commitSha ? { commitSha: ctx.commitSha } : {}),
         });
+
+      // Detect non-literal dynamic import(expr) or require(expr) and report incomplete analysis honestly
+      const dynamicImportMatch =
+        /\b(?:import|require)\s*\(\s*(?!['"])([^)]+)\)/.exec(line);
+      if (
+        dynamicImportMatch?.[1] &&
+        !line.trim().startsWith('//') &&
+        !line.trim().startsWith('*')
+      ) {
+        const expr = dynamicImportMatch[1].trim();
+        if (expr && !expr.startsWith("'") && !expr.startsWith('"')) {
+          notesOrLimitations.push(
+            `Dynamic module import expression (${expr.slice(0, 50)}) at ${ctx.file.relativePath}:${lineNum} cannot be statically resolved; dependency edge omitted rather than invented.`
+          );
+        }
+      }
 
       // 1. ES Module import / export from / CommonJS require
       const importMatch =
@@ -433,6 +470,7 @@ export class NodeTypeScriptAdapter implements RepositoryAnalyzerAdapter {
       dependencyEdges,
       apiSurfaces,
       entryPoints,
+      ...(notesOrLimitations.length > 0 ? { notesOrLimitations } : {}),
     };
   }
 

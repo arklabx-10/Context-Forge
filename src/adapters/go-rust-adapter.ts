@@ -17,15 +17,34 @@ export class GoRustAdapter implements RepositoryAnalyzerAdapter {
   public readonly displayName = 'Go (go.mod) & Rust (Cargo.toml) Adapter';
   public readonly description =
     'Analyzes go.mod and Cargo.toml manifests, Go/Rust entry points, module references, and exported functions/structs.';
-  public readonly version = '1.0.0';
+  public readonly version = '1.1.0';
   public readonly capabilities = {
     detectsManifests: true,
+    detectsLanguagesAndFrameworks: true,
     extractsSymbols: true,
     extractsModuleImports: true,
     detectsEntryPoints: true,
     detectsApiSurfaces: false,
     analyzesSqlObjects: false,
+    extractsBuildAndTestMetadata: true,
     inspectsDiffRisks: false,
+  } as const;
+
+  public readonly supportedInputs = {
+    extensions: ['.go', '.rs', '.mod', '.toml'],
+    filenamesOrGlobs: ['go.mod', 'Cargo.toml', '*.go', '*.rs'],
+    ecosystemsOrDialects: ['Go Modules', 'Rust / Cargo'],
+  } as const;
+
+  public readonly limitations = [
+    'Rust procedural macros and include!() macro expansions are not executed.',
+    'CGO dynamic shared library bindings are not resolved.',
+  ] as const;
+
+  public readonly requiredResources = {
+    maxFileSizeBytes: 1_048_576,
+    requiresSiblingFileIndex: true,
+    executionMode: 'in_process_safe_static',
   } as const;
 
   public supportsFile(file: IndexedFileRecord): boolean {

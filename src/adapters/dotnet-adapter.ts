@@ -18,15 +18,34 @@ export class DotNetAdapter implements RepositoryAnalyzerAdapter {
   public readonly displayName = '.NET / C# / MSBuild Adapter';
   public readonly description =
     'Analyzes .csproj/.sln files, NuGet PackageReferences, ProjectReferences, C# types, and ASP.NET endpoints.';
-  public readonly version = '1.0.0';
+  public readonly version = '1.1.0';
   public readonly capabilities = {
     detectsManifests: true,
+    detectsLanguagesAndFrameworks: true,
     extractsSymbols: true,
     extractsModuleImports: true,
     detectsEntryPoints: true,
     detectsApiSurfaces: true,
     analyzesSqlObjects: false,
+    extractsBuildAndTestMetadata: true,
     inspectsDiffRisks: false,
+  } as const;
+
+  public readonly supportedInputs = {
+    extensions: ['.csproj', '.fsproj', '.sln', '.cs'],
+    filenamesOrGlobs: ['*.csproj', '*.fsproj', '*.sln', '*.cs'],
+    ecosystemsOrDialects: ['.NET SDK / MSBuild', 'C#', 'ASP.NET Core', 'NuGet'],
+  } as const;
+
+  public readonly limitations = [
+    'Dynamic Assembly.Load() and reflection-based type instantiation cannot be statically resolved.',
+    'MSBuild Directory.Build.props / external target imports outside the project file are not evaluated.',
+  ] as const;
+
+  public readonly requiredResources = {
+    maxFileSizeBytes: 1_048_576,
+    requiresSiblingFileIndex: false,
+    executionMode: 'in_process_safe_static',
   } as const;
 
   public supportsFile(file: IndexedFileRecord): boolean {

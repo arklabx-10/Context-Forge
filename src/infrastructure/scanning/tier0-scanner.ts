@@ -339,6 +339,7 @@ export function detectFileLanguageWithSignals(
   readonly language: string | null;
   readonly signals: readonly LanguageDetectionSignal[];
   readonly certainty: CertaintyLevel;
+  readonly conflictDetail?: string;
 } {
   const baseLower = path.posix.basename(relativePath).toLowerCase();
   const ext = path.posix.extname(baseLower);
@@ -428,18 +429,25 @@ export function detectFileLanguageWithSignals(
     shebangLang ??
     contentLang;
 
+  let conflictDetail: string | undefined;
+  if (extLang && shebangLang && !extLang.toLowerCase().includes(shebangLang.toLowerCase())) {
+    conflictDetail = `Conflicting language detection signals in "${relativePath}": file extension "${ext}" indicates ${extLang}, whereas shebang interpreter directive indicates ${shebangLang}.`;
+  }
+
   if (resolvedLanguage) {
     const uniqueSignals = Array.from(new Set(signals));
-    const certainty: CertaintyLevel =
-      uniqueSignals.includes('extension') ||
-      uniqueSignals.includes('filename') ||
-      uniqueSignals.includes('shebang')
+    const certainty: CertaintyLevel = conflictDetail
+      ? 'inferred'
+      : uniqueSignals.includes('extension') ||
+          uniqueSignals.includes('filename') ||
+          uniqueSignals.includes('shebang')
         ? 'verified'
         : 'inferred';
     return {
       language: resolvedLanguage,
       signals: uniqueSignals,
       certainty,
+      ...(conflictDetail ? { conflictDetail } : {}),
     };
   }
 

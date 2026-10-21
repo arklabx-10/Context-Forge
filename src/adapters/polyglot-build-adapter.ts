@@ -14,15 +14,33 @@ export class PolyglotBuildAdapter implements RepositoryAnalyzerAdapter {
   public readonly displayName = 'Docker, Compose & Makefile Adapter';
   public readonly description =
     'Analyzes Dockerfile, docker-compose.yml, and Makefile build/container definitions across any stack.';
-  public readonly version = '1.0.0';
+  public readonly version = '1.1.0';
   public readonly capabilities = {
     detectsManifests: false,
+    detectsLanguagesAndFrameworks: false,
     extractsSymbols: false,
     extractsModuleImports: false,
     detectsEntryPoints: true,
     detectsApiSurfaces: false,
     analyzesSqlObjects: false,
+    extractsBuildAndTestMetadata: true,
     inspectsDiffRisks: false,
+  } as const;
+
+  public readonly supportedInputs = {
+    extensions: ['.yml', '.yaml'],
+    filenamesOrGlobs: ['Dockerfile', 'Dockerfile.*', 'Makefile', 'GNUmakefile', 'docker-compose.yml', 'docker-compose.yaml'],
+    ecosystemsOrDialects: ['Docker', 'Docker Compose', 'GNU Make'],
+  } as const;
+
+  public readonly limitations = [
+    'Build-time shell variable expansions inside Dockerfiles and Makefiles are not executed.',
+  ] as const;
+
+  public readonly requiredResources = {
+    maxFileSizeBytes: 524_288,
+    requiresSiblingFileIndex: false,
+    executionMode: 'in_process_safe_static',
   } as const;
 
   public supportsFile(file: IndexedFileRecord): boolean {

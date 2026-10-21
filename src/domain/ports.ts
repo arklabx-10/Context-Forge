@@ -35,12 +35,60 @@ import type {
 
 export interface AdapterCapabilities {
   readonly detectsManifests: boolean;
+  readonly detectsLanguagesAndFrameworks?: boolean;
   readonly extractsSymbols: boolean;
   readonly extractsModuleImports: boolean;
   readonly detectsEntryPoints: boolean;
   readonly detectsApiSurfaces: boolean;
   readonly analyzesSqlObjects: boolean;
+  readonly extractsBuildAndTestMetadata?: boolean;
   readonly inspectsDiffRisks: boolean;
+}
+
+export interface SupportedAnalyzerInputs {
+  readonly extensions: readonly string[];
+  readonly filenamesOrGlobs: readonly string[];
+  readonly ecosystemsOrDialects: readonly string[];
+}
+
+export interface AdapterResourceRequirements {
+  readonly maxFileSizeBytes: number;
+  readonly requiresSiblingFileIndex: boolean;
+  /** Enforces safe, static in-process analysis without untrusted subprocess execution. */
+  readonly executionMode: 'in_process_safe_static';
+}
+
+/**
+ * Explicit sub-contracts representing the 6 analyzer responsibilities.
+ */
+export interface LanguageAndFrameworkAnalysisOutput {
+  readonly languages?: readonly EvidenceBackedClaim<string>[];
+  readonly frameworks?: readonly EvidenceBackedClaim<string>[];
+}
+
+export interface SourceSymbolAnalysisOutput {
+  readonly symbols?: readonly ExtractedSymbol[];
+  readonly entryPoints?: readonly EvidenceBackedClaim<EntryPointDescriptor>[];
+}
+
+export interface DependencyAnalysisOutput {
+  readonly dependencyEdges?: readonly EvidenceBackedClaim<DependencyEdge>[];
+  readonly externalDependencies?: readonly EvidenceBackedClaim<ExternalDependency>[];
+  readonly workspaceMemberGlobs?: readonly string[];
+}
+
+export interface ApiAndSchemaAnalysisOutput {
+  readonly apiSurfaces?: readonly EvidenceBackedClaim<ApiSurfaceDescriptor>[];
+}
+
+export interface DatabaseObjectAnalysisOutput {
+  readonly databaseObjects?: readonly EvidenceBackedClaim<DatabaseObjectDescriptor>[];
+}
+
+export interface BuildAndTestMetadataAnalysisOutput {
+  readonly packageManagers?: readonly EvidenceBackedClaim<string>[];
+  readonly buildSystems?: readonly EvidenceBackedClaim<string>[];
+  readonly testHarnesses?: readonly EvidenceBackedClaim<string>[];
 }
 
 export interface AdapterFileContext {
@@ -81,7 +129,8 @@ export interface AdapterDiffContext {
 }
 
 /**
- * 1. Analyzer Port: Pluggable, independently testable Language / Stack / SQL Adapter contract.
+ * 1. Analyzer Port: Pluggable, independently testable Language / Stack / SQL / API Schema Adapter contract.
+ * Declares supported inputs, capabilities, semantic version, known static limitations, and resource requirements.
  */
 export interface RepositoryAnalyzerAdapter {
   readonly adapterId: string;
@@ -89,6 +138,9 @@ export interface RepositoryAnalyzerAdapter {
   readonly description: string;
   readonly version: string;
   readonly capabilities: AdapterCapabilities;
+  readonly supportedInputs?: SupportedAnalyzerInputs;
+  readonly limitations?: readonly string[];
+  readonly requiredResources?: AdapterResourceRequirements;
 
   supportsFile(file: IndexedFileRecord): boolean;
 

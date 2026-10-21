@@ -239,15 +239,21 @@ export async function analyzeRepository(params: {
       file.detectedLanguage &&
       !['Markdown', 'JSON', 'YAML', 'TOML', 'XML', 'INI'].includes(file.detectedLanguage)
     ) {
+      const fullLangCheck = detectFileLanguageWithSignals(file.relativePath, content);
+      if (fullLangCheck.conflictDetail) {
+        unknownsAndLimitations.add(fullLangCheck.conflictDetail);
+      }
       const isUnrecognized = file.detectedLanguage.startsWith('Unrecognized');
       const signalsList = file.languageDetectionSignals?.join(' + ') ?? 'extension';
       const langCertainty = isUnrecognized
         ? 'unknown'
-        : file.languageDetectionSignals?.some((s) =>
-              ['extension', 'filename', 'shebang'].includes(s)
-            )
-          ? 'verified'
-          : 'inferred';
+        : fullLangCheck.conflictDetail
+          ? 'inferred'
+          : file.languageDetectionSignals?.some((s) =>
+                ['extension', 'filename', 'shebang'].includes(s)
+              )
+            ? 'verified'
+            : 'inferred';
 
       if (!spAcc.languages.has(file.detectedLanguage)) {
         spAcc.languages.set(file.detectedLanguage, {
@@ -286,12 +292,36 @@ export async function analyzeRepository(params: {
 
     // Tier-1 optional adapters (isolated with partial-analysis fault tolerance)
     for (const adapter of params.adapters) {
-      if (!adapter.supportsFile(file)) {
+      const trackEntry = adapterTracker.get(adapter.adapterId)!;
+      let isSupported = false;
+      try {
+        isSupported = adapter.supportsFile(file);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Adapter supportsFile error';
+        const errNote = `Adapter "${adapter.adapterId}" failed during supportsFile("${file.relativePath}"): ${msg}`;
+        unknownsAndLimitations.add(errNote);
+        trackEntry.hasPartialError = true;
+        trackEntry.notes.push(errNote);
         continue;
       }
+
+      if (!isSupported) {
+        continue;
+      }
+
       activeAdapterIds.add(adapter.adapterId);
-      const trackEntry = adapterTracker.get(adapter.adapterId)!;
       trackEntry.filesMatchedCount += 1;
+
+      if (
+        adapter.requiredResources?.maxFileSizeBytes !== undefined &&
+        file.sizeBytes > adapter.requiredResources.maxFileSizeBytes
+      ) {
+        const limitNote = `Adapter "${adapter.adapterId}" skipped "${file.relativePath}" (${file.sizeBytes} bytes exceeds adapter maxFileSizeBytes ${adapter.requiredResources.maxFileSizeBytes}).`;
+        unknownsAndLimitations.add(limitNote);
+        trackEntry.hasPartialError = true;
+        trackEntry.notes.push(limitNote);
+        continue;
+      }
 
       try {
         const fragment = await adapter.analyzeFile({
