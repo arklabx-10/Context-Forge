@@ -1,0 +1,5 @@
+module LedgerMain {
+  proc bootstrap_cluster(nodes: int) {
+    return reconcile_shard(nodes);
+  }
+}

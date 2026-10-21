@@ -1,0 +1,34 @@
+{
+  "name": "context-forge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stack-agnostic AI engineering workspace for repository intelligence, verified project knowledge, deterministic context assembly, and safe change review.",
+  "type": "module",
+  "scripts": {
+    "dev:server": "node --import tsx/esm src/server/main.ts",
+    "dev:ui": "vite",
+    "build:ui": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run typecheck && npm run build:ui && npm run build:server",
+    "start": "node dist/server/server/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

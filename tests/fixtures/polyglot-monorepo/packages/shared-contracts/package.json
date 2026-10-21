@@ -1,0 +1,8 @@
+{
+  "name": "@acme/shared-contracts",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

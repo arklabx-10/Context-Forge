@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+!.env.template
+.DS_Store
+Thumbs.db
+.contextforge-data/

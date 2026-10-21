@@ -1,0 +1,9 @@
+module ShardEngine {
+  proc reconcile_shard(shard_id: int) {
+    return shard_id * 2;
+  }
+
+  rule invariant_balance_non_negative {
+    check(balance >= 0);
+  }
+}
