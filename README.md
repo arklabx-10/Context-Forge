@@ -24,6 +24,53 @@ ContextForge is a local-first, stack-agnostic AI engineering workspace that help
    - External AI adapters require an explicit per-request `OutboundConsentToken` bound to the exact `payloadSha256`.
    - Built-in SQLite index inspector and 1-click **Purge All Indexed Data** control.
 
+## Command-Line Interface (CLI) & CI/CD Integration
+
+ContextForge includes an executable CLI (`contextforge` / `npx contextforge`) for local developer workflows and automated CI pipelines:
+
+```bash
+# 1. Onboard and analyze any repository
+contextforge onboard ./my-repo
+contextforge onboard . --json
+
+# 2. Assemble a deterministic AI context pack for an assistant
+contextforge pack . --task "Add payment webhook handler" --target claude_code -o context.md
+contextforge pack . --task "Fix SQL deadlock" --budget 12000 --format plaintext
+
+# 3. Conduct an evidence-backed Git change review
+contextforge review .
+# Fail CI build if critical risks (destructive SQL, secret leaks, prompt injections) are introduced:
+contextforge review . --fail-on-critical
+
+# 4. Generate deterministic Markdown repository report (No AI required)
+contextforge report . -o REPORT.md
+
+# 5. Launch the local workspace server and static UI
+contextforge serve --port 4310
+```
+
+### GitHub Actions CI Example
+
+```yaml
+name: ContextForge Change Review Guard
+
+on: [pull_request]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm run build
+      - name: Evidence-Backed Diff Review
+        run: npx contextforge review . --target "origin/${{ github.base_ref }}...HEAD" --fail-on-critical
+```
+
 ## Quick Start
 
 ```bash

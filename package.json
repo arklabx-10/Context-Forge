@@ -4,13 +4,18 @@
   "private": true,
   "description": "Stack-agnostic AI engineering workspace for repository intelligence, verified project knowledge, deterministic context assembly, and safe change review.",
   "type": "module",
+  "bin": {
+    "contextforge": "./bin/contextforge.js"
+  },
   "scripts": {
     "dev:server": "node --import tsx/esm src/server/main.ts",
     "dev:ui": "vite",
+    "dev:cli": "node --import tsx/esm src/cli/index.ts",
     "build:ui": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run typecheck && npm run build:ui && npm run build:server",
     "start": "node dist/server/server/main.js",
+    "contextforge": "node dist/server/cli/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

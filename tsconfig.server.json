@@ -12,7 +12,8 @@
     "src/application/**/*",
     "src/infrastructure/**/*",
     "src/adapters/**/*",
-    "src/server/**/*"
+    "src/server/**/*",
+    "src/cli/**/*"
   ],
   "exclude": ["src/ui/**/*", "tests/**/*"]
 }
