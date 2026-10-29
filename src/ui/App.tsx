@@ -186,6 +186,7 @@ export function App(): React.ReactElement {
   const [diffTargetSpec, setDiffTargetSpec] = useState<string>('WORKING_TREE');
   const [rawDiffInput, setRawDiffInput] = useState<string>('');
   const [activeReviewReport, setActiveReviewReport] = useState<ChangeReviewReport | null>(null);
+  const [activeReviewMarkdown, setActiveReviewMarkdown] = useState<string>('');
 
   // Settings & AI Consent state
   const [aiConfig, setAiConfig] = useState<AiProviderConfig | null>(null);
@@ -511,6 +512,7 @@ export function App(): React.ReactElement {
         ...(diffToUse.trim() ? { rawDiffOverride: diffToUse } : {}),
       });
       setActiveReviewReport(res.report);
+      setActiveReviewMarkdown(res.markdownReport ?? '');
       setStatusNotice(
         `Completed change review: ${res.report.findings.length} evidence-backed finding(s) across ${res.report.stats.totalChangedFiles} changed file(s).`
       );
@@ -3014,6 +3016,21 @@ export function App(): React.ReactElement {
                           {entry.stalenessStatus === 'reference_missing' && (
                             <span className="badge badge-danger">FILE MISSING</span>
                           )}
+                          {entry.stalenessStatus !== 'verified_fresh' && entry.stalenessStatus !== 'unlinked' && (
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              style={{ padding: '2px 8px', fontSize: '11px' }}
+                              onClick={async () => {
+                                await apiClient.reconcileKnowledge(activeRepoId, entry.id);
+                                const updated = await apiClient.listKnowledge(activeRepoId);
+                                setKnowledgeEntries(updated.entries);
+                                setStatusNotice(`Reconciled and re-anchored "${entry.title}" to current file fingerprint.`);
+                              }}
+                            >
+                              Re-anchor
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="btn btn-danger"
@@ -3123,7 +3140,7 @@ export function App(): React.ReactElement {
               <div className="panel">
                 {activeReviewReport ? (
                   <>
-                    <div className="panel-header">
+                    <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <h3 className="panel-title">
                           Review Report: {activeReviewReport.diffTargetLabel}
@@ -3140,6 +3157,18 @@ export function App(): React.ReactElement {
                           · {activeReviewReport.stats.infoCount} info
                         </p>
                       </div>
+                      {activeReviewMarkdown && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(activeReviewMarkdown);
+                            setStatusNotice('Copied Change Review Markdown report to clipboard!');
+                          }}
+                        >
+                          Copy Markdown Report
+                        </button>
+                      )}
                     </div>
 
                     {activeReviewReport.findings.length === 0 ? (

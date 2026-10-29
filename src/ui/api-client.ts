@@ -19,6 +19,16 @@ import type {
   SearchHit,
 } from '../domain/index.js';
 
+export interface KnowledgeAuditSummary {
+  readonly repoId: string;
+  readonly totalEntries: number;
+  readonly freshCount: number;
+  readonly potentiallyStaleCount: number;
+  readonly missingReferenceCount: number;
+  readonly unlinkedCount: number;
+  readonly entries: readonly KnowledgeEntry[];
+}
+
 export interface HealthPayload {
   readonly status: string;
   readonly adapters: readonly {
@@ -162,6 +172,20 @@ export const apiClient = {
       `/api/repositories/${encodeURIComponent(repoId)}/knowledge`
     ),
 
+  auditKnowledge: (repoId: string) =>
+    requestJson<{ audit: KnowledgeAuditSummary }>(
+      `/api/repositories/${encodeURIComponent(repoId)}/knowledge/audit`
+    ),
+
+  reconcileKnowledge: (repoId: string, entryId: string, removeMissingReferences?: boolean) =>
+    requestJson<{ entry: KnowledgeEntry }>(
+      `/api/repositories/${encodeURIComponent(repoId)}/knowledge/${encodeURIComponent(entryId)}/reconcile`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ removeMissingReferences }),
+      }
+    ),
+
   saveKnowledge: (
     repoId: string,
     payload: {
@@ -190,7 +214,7 @@ export const apiClient = {
     repoId: string,
     payload: { targetSpec?: string; rawDiffOverride?: string }
   ) =>
-    requestJson<{ report: ChangeReviewReport }>(
+    requestJson<{ report: ChangeReviewReport; markdownReport?: string }>(
       `/api/repositories/${encodeURIComponent(repoId)}/reviews`,
       {
         method: 'POST',

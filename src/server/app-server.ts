@@ -267,6 +267,25 @@ async function handleApiRequest(
       return;
     }
 
+    if (method === 'GET' && subRoute === 'knowledge/audit') {
+      const audit = service.auditRepositoryKnowledge(repoId);
+      sendJson(res, 200, { audit });
+      return;
+    }
+
+    const reconcileMatch = /^knowledge\/([^/]+)\/reconcile$/.exec(subRoute);
+    if (method === 'POST' && reconcileMatch?.[1]) {
+      const entryId = decodeURIComponent(reconcileMatch[1]);
+      const body = await readJsonBody<{ removeMissingReferences?: boolean }>(req);
+      const entry = service.reconcileKnowledgeEntry({
+        repoId,
+        entryId,
+        removeMissingReferences: body.removeMissingReferences,
+      });
+      sendJson(res, 200, { entry });
+      return;
+    }
+
     if (method === 'POST' && subRoute === 'knowledge') {
       const body = await readJsonBody<{
         id?: string;
@@ -298,7 +317,8 @@ async function handleApiRequest(
         repoId,
         ...body,
       });
-      sendJson(res, 200, { report });
+      const markdownReport = service.generateChangeReviewReport(report);
+      sendJson(res, 200, { report, markdownReport });
       return;
     }
   }

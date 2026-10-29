@@ -96,6 +96,7 @@ COMMANDS:
   onboard [path]          Analyze a repository, extract symbols & dependencies, and save a snapshot.
   pack [path]             Assemble a deterministic AI context pack for a development task.
   review [path]           Conduct an evidence-backed Git change review (blast-radius & risk analysis).
+  knowledge [path]        Audit project knowledge staleness and reconcile source drift.
   report [path]           Generate a deterministic Markdown repository report without AI.
   serve                   Start the local HTTP API and UI static file server.
   help                    Show this help message.
@@ -125,9 +126,15 @@ PACK OPTIONS:
 REVIEW OPTIONS:
   --target <git-spec>     Git revision or range to review (default: WORKING_TREE).
   --raw-diff <file>       Path to unified diff patch file to review.
+  --format <fmt>          terminal (default) | markdown | json
   --fail-on-critical      Exit with code 1 if critical risks are detected (ideal for CI/CD).
   --fail-on-warning       Exit with code 1 if warnings or critical risks are detected.
   --output, -o <file>     Write change review report to file.
+
+KNOWLEDGE OPTIONS:
+  --audit                 Audit staleness and drift across all ADRs and project knowledge.
+  --reconcile <id>        Reconcile and re-anchor a stale knowledge entry to current snapshot.
+  --remove-missing        When reconciling, remove references to files that were deleted.
 
 SERVE OPTIONS:
   --port <port>           Server port (default: 4310).
@@ -336,8 +343,13 @@ export async function runCli(
           rawDiffOverride,
         });
 
+        const isMarkdownFormat = parsed.flags.format === 'markdown';
+        const markdownReport = isMarkdownFormat ? service.generateChangeReviewReport(report) : null;
+
         if (parsed.flags.json) {
           io.stdout(JSON.stringify(report, null, 2));
+        } else if (isMarkdownFormat && markdownReport) {
+          io.stdout(markdownReport);
         } else {
           io.stdout('\n========================================================');
           io.stdout(`ContextForge Git Change Review: ${repository.name}`);
@@ -372,7 +384,10 @@ export async function runCli(
               : null;
 
         if (outputFile) {
-          await fs.writeFile(outputFile, JSON.stringify(report, null, 2), 'utf-8');
+          const contentToWrite = isMarkdownFormat && markdownReport
+            ? markdownReport
+            : JSON.stringify(report, null, 2);
+          await fs.writeFile(outputFile, contentToWrite, 'utf-8');
           io.stderr(`Review report written to "${outputFile}".`);
         }
 
@@ -389,6 +404,67 @@ export async function runCli(
           return 1;
         }
 
+        return 0;
+      }
+
+      case 'knowledge': {
+        const repoPath = parsed.positionals[0] ?? '.';
+        const { repository } = await service.onboardRepository({
+          rootPath: repoPath,
+        });
+
+        if (typeof parsed.flags.reconcile === 'string') {
+          const entryId = parsed.flags.reconcile;
+          const reconciled = service.reconcileKnowledgeEntry({
+            repoId: repository.id,
+            entryId,
+            removeMissingReferences: Boolean(parsed.flags['remove-missing']),
+          });
+
+          if (parsed.flags.json) {
+            io.stdout(JSON.stringify(reconciled, null, 2));
+          } else {
+            io.stdout(`\nReconciled knowledge entry "${reconciled.title}" (${reconciled.id}): Status is now ${reconciled.stalenessStatus}.`);
+          }
+          return 0;
+        }
+
+        const audit = service.auditRepositoryKnowledge(repository.id);
+        if (parsed.flags.json) {
+          io.stdout(JSON.stringify(audit, null, 2));
+        } else {
+          io.stdout('\n========================================================');
+          io.stdout(`ContextForge Knowledge Drift Audit: ${repository.name}`);
+          io.stdout('========================================================');
+          io.stdout(`Total Entries    : ${audit.totalEntries}`);
+          io.stdout(`Verified Fresh   : ${audit.freshCount}`);
+          io.stdout(`Potentially Stale: ${audit.potentiallyStaleCount}`);
+          io.stdout(`Missing Reference: ${audit.missingReferenceCount}`);
+          io.stdout(`Unlinked Entries : ${audit.unlinkedCount}`);
+
+          if (audit.entries.length > 0) {
+            io.stdout('\nEntries:');
+            for (const e of audit.entries) {
+              const badge =
+                e.stalenessStatus === 'verified_fresh'
+                  ? '[FRESH]'
+                  : e.stalenessStatus === 'potentially_stale'
+                    ? '[STALE]'
+                    : e.stalenessStatus === 'reference_missing'
+                      ? '[MISSING REF]'
+                      : '[UNLINKED]';
+              io.stdout(`  ${badge} ${e.title} (${e.category}) - ${e.id}`);
+              if (e.driftDetails.length > 0) {
+                for (const d of e.driftDetails) {
+                  io.stdout(`    ! Drift: ${d.reference.relativePath} (${d.reason})`);
+                }
+              }
+            }
+          } else {
+            io.stdout('\nNo project knowledge entries recorded yet.');
+          }
+          io.stdout('========================================================\n');
+        }
         return 0;
       }
 

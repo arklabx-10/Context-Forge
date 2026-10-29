@@ -38,8 +38,19 @@ import {
   validateAndResolveRepoRoot,
 } from '../infrastructure/repo-access/safe-fs.js';
 import { generateRepositoryMarkdownReport } from '../infrastructure/reporting/markdown-report-generator.js';
+import { generateChangeReviewMarkdownReport } from '../infrastructure/reporting/change-review-report-generator.js';
 import { analyzeRepository } from '../infrastructure/scanning/repository-analyzer.js';
 import { reviewRepositoryChanges } from './change-review-service.js';
+
+export interface KnowledgeAuditSummary {
+  readonly repoId: string;
+  readonly totalEntries: number;
+  readonly freshCount: number;
+  readonly potentiallyStaleCount: number;
+  readonly missingReferenceCount: number;
+  readonly unlinkedCount: number;
+  readonly entries: readonly KnowledgeEntry[];
+}
 
 export class ContextForgeWorkspaceService {
   private readonly store: ContextForgeSqliteStore;
@@ -367,6 +378,89 @@ export class ContextForgeWorkspaceService {
 
   public deleteKnowledgeEntry(id: string): void {
     this.store.deleteKnowledgeEntry(id);
+  }
+
+  public auditRepositoryKnowledge(repoId: string): KnowledgeAuditSummary {
+    const entries = this.store.listKnowledgeEntries(repoId);
+    let freshCount = 0;
+    let potentiallyStaleCount = 0;
+    let missingReferenceCount = 0;
+    let unlinkedCount = 0;
+
+    for (const entry of entries) {
+      if (entry.stalenessStatus === 'verified_fresh') freshCount += 1;
+      else if (entry.stalenessStatus === 'potentially_stale') potentiallyStaleCount += 1;
+      else if (entry.stalenessStatus === 'reference_missing') missingReferenceCount += 1;
+      else if (entry.stalenessStatus === 'unlinked') unlinkedCount += 1;
+    }
+
+    return {
+      repoId,
+      totalEntries: entries.length,
+      freshCount,
+      potentiallyStaleCount,
+      missingReferenceCount,
+      unlinkedCount,
+      entries,
+    };
+  }
+
+  public reconcileKnowledgeEntry(params: {
+    readonly repoId: string;
+    readonly entryId: string;
+    readonly removeMissingReferences?: boolean;
+  }): KnowledgeEntry {
+    const entries = this.store.listKnowledgeEntries(params.repoId);
+    const existing = entries.find((e) => e.id === params.entryId);
+    if (!existing) {
+      throw new Error(`Knowledge entry ${params.entryId} not found in repository ${params.repoId}`);
+    }
+
+    const snapshot = this.store.getLatestSnapshot(params.repoId);
+    if (!snapshot) {
+      throw new Error(`No snapshot available for repository ${params.repoId}`);
+    }
+
+    const fileMap = new Map(snapshot.files.map((f) => [f.relativePath, f]));
+    const reconciledReferences: SourceReference[] = [];
+
+    for (const ref of existing.linkedReferences) {
+      const currentFile = fileMap.get(ref.relativePath);
+      if (!currentFile) {
+        if (!params.removeMissingReferences) {
+          reconciledReferences.push(ref);
+        }
+        continue;
+      }
+
+      const endLine =
+        ref.endLine !== undefined && currentFile.lineCount !== null
+          ? Math.min(ref.endLine, Math.max(1, currentFile.lineCount))
+          : ref.endLine;
+
+      reconciledReferences.push({
+        ...ref,
+        fileSha256: currentFile.sha256,
+        endLine,
+        capturedAtIso: snapshot.analyzedAtIso,
+      });
+    }
+
+    return this.store.upsertKnowledgeEntry({
+      id: existing.id,
+      repoId: existing.repoId,
+      category: existing.category,
+      title: existing.title,
+      contentMarkdown: existing.contentMarkdown,
+      isAiGeneratedSummary: existing.isAiGeneratedSummary,
+      createdAtIso: existing.createdAtIso,
+      updatedAtIso: new Date().toISOString(),
+      linkedReferences: reconciledReferences,
+    });
+  }
+
+  public generateChangeReviewReport(report: ChangeReviewReport): string {
+    return generateChangeReviewMarkdownReport(report);
   }
 
   public async reviewChanges(params: {
