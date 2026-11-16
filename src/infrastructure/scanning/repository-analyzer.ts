@@ -237,7 +237,17 @@ export async function analyzeRepository(params: {
     // Record detected language claim on the owning SubProject
     if (
       file.detectedLanguage &&
-      !['Markdown', 'JSON', 'YAML', 'TOML', 'XML', 'INI'].includes(file.detectedLanguage)
+      ![
+        'Markdown',
+        'JSON',
+        'YAML',
+        'TOML',
+        'XML',
+        'INI',
+        'Plain Text',
+        'Pip Requirements',
+        'Dotenv Template',
+      ].includes(file.detectedLanguage)
     ) {
       const fullLangCheck = detectFileLanguageWithSignals(file.relativePath, content);
       if (fullLangCheck.conflictDetail) {

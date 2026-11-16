@@ -73,6 +73,8 @@ jobs:
 
 ## Quick Start
 
+**Requirements:** Node.js 22.13 or newer (Node.js 24 recommended). ContextForge uses the built-in `node:sqlite` module, which needs no native build step. On Node 22, Node prints an `ExperimentalWarning: SQLite is an experimental feature` message; this is expected and harmless. Set `NODE_NO_WARNINGS=1` to hide it.
+
 ```bash
 # 1. Typecheck and run automated test suite
 npm run typecheck

@@ -7,6 +7,7 @@ import { describe, it } from 'vitest';
 import { createDefaultAdapters } from '../src/adapters/index.js';
 import {
   AiInputSizeExceededError,
+  AiProviderExecutionError,
   AiRateLimitError,
   AiRequestCancelledError,
   AiSensitiveFileDisclosedError,
@@ -271,8 +272,13 @@ describe('Phase 3 — Task-Specific AI Context Generation, Budgets, Stale Files 
     const store = new ContextForgeSqliteStore(':memory:');
 
     // Spin up a local test HTTP server to simulate OpenAI-compatible provider responses (429, slow timeout, 200 OK)
-    let mockMode: 'ok' | 'rate_limit' | 'slow_timeout' = 'ok';
+    let mockMode: 'ok' | 'rate_limit' | 'slow_timeout' | 'unknown_shape' = 'ok';
     const mockAiServer = http.createServer(async (_req, res) => {
+      if (mockMode === 'unknown_shape') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ unexpected: { echoed: 'raw provider payload' } }));
+        return;
+      }
       if (mockMode === 'rate_limit') {
         res.writeHead(429, {
           'Content-Type': 'application/json',
@@ -429,6 +435,16 @@ describe('Phase 3 — Task-Specific AI Context Generation, Budgets, Stale Files 
             validToken
           ),
         AiRequestCancelledError
+      );
+
+      // G2. Unrecognized response shape fails predictably instead of surfacing raw JSON as AI text
+      mockMode = 'unknown_shape';
+      await assert.rejects(
+        () => provider.generateText(validRequest, validToken),
+        (err: unknown) =>
+          err instanceof AiProviderExecutionError &&
+          /unrecognized response/i.test(err.message) &&
+          !err.message.includes('raw provider payload')
       );
 
       // H. Valid consented request succeeds and labels output as 'ai_generated'

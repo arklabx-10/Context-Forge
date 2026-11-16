@@ -71,6 +71,7 @@ const EXTENSION_LANGUAGE_MAP: Readonly<Record<string, string>> = {
   '.toml': 'TOML',
   '.xml': 'XML',
   '.ini': 'INI',
+  '.txt': 'Plain Text',
 };
 
 const MANIFEST_BASENAMES = new Set([
@@ -357,6 +358,12 @@ export function detectFileLanguageWithSignals(
   }
   if (baseLower === 'jenkinsfile') {
     return { language: 'Groovy (Jenkinsfile)', signals: ['filename'], certainty: 'verified' };
+  }
+  if (/^(?:requirements|constraints)(?:[-_.][a-z0-9_.-]+)?\.txt$/.test(baseLower)) {
+    return { language: 'Pip Requirements', signals: ['filename'], certainty: 'verified' };
+  }
+  if (/^\.env(?:\.[a-z0-9_-]+)*\.(?:example|template|sample|dist)$/.test(baseLower)) {
+    return { language: 'Dotenv Template', signals: ['filename'], certainty: 'verified' };
   }
 
   // Signal 2: Shebang interpreter line

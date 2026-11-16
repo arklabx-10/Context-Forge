@@ -2168,6 +2168,7 @@ export function App(): React.ReactElement {
                   <input
                     className="input mono"
                     style={{ marginTop: '8px', marginBottom: '8px' }}
+                    aria-label="Filter internal dependency edges"
                     placeholder="Filter internal dependency edges..."
                     value={depEdgeQuery}
                     onChange={(e) => {
@@ -2245,6 +2246,7 @@ export function App(): React.ReactElement {
                   <input
                     className="input mono"
                     style={{ marginTop: '8px', marginBottom: '8px' }}
+                    aria-label="Filter external packages"
                     placeholder="Filter external packages..."
                     value={extDepQuery}
                     onChange={(e) => {
@@ -2329,6 +2331,7 @@ export function App(): React.ReactElement {
                 <input
                   className="input"
                   style={{ flex: '1 1 320px' }}
+                  aria-label="Search query"
                   placeholder="Search files, symbols, SQL tables, dependencies, or ADRs..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -2336,6 +2339,7 @@ export function App(): React.ReactElement {
                 <select
                   className="select"
                   style={{ width: '190px' }}
+                  aria-label="Search scope"
                   value={searchScope}
                   onChange={(e) => setSearchScope(e.target.value as 'REPO' | 'GLOBAL')}
                 >
@@ -2345,6 +2349,7 @@ export function App(): React.ReactElement {
                 <select
                   className="select"
                   style={{ width: '170px' }}
+                  aria-label="Result kind"
                   value={searchKind}
                   onChange={(e) => setSearchKind(e.target.value)}
                 >
@@ -2543,8 +2548,9 @@ export function App(): React.ReactElement {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '14px' }}>
                   <div>
-                    <label className="field-label">Development Task Type</label>
+                    <label className="field-label" htmlFor="cf-development-task-type">Development Task Type</label>
                     <select
+                      id="cf-development-task-type"
                       className="select"
                       value={taskType}
                       onChange={(e) => setTaskType(e.target.value as DevelopmentTaskType)}
@@ -2561,8 +2567,9 @@ export function App(): React.ReactElement {
                   </div>
 
                   <div>
-                    <label className="field-label">Task Title</label>
+                    <label className="field-label" htmlFor="cf-task-title">Task Title</label>
                     <input
+                      id="cf-task-title"
                       className="input"
                       value={taskTitle}
                       onChange={(e) => setTaskTitle(e.target.value)}
@@ -2570,8 +2577,9 @@ export function App(): React.ReactElement {
                   </div>
 
                   <div>
-                    <label className="field-label">Task Description & Specific Constraints</label>
+                    <label className="field-label" htmlFor="cf-task-description-specific-constraints">Task Description & Specific Constraints</label>
                     <textarea
+                      id="cf-task-description-specific-constraints"
                       className="textarea"
                       rows={3}
                       value={taskDescription}
@@ -2580,8 +2588,9 @@ export function App(): React.ReactElement {
                   </div>
 
                   <div>
-                    <label className="field-label">Scope to Sub-Project (Optional)</label>
+                    <label className="field-label" htmlFor="cf-scope-to-sub-project-optional">Scope to Sub-Project (Optional)</label>
                     <select
+                      id="cf-scope-to-sub-project-optional"
                       className="select"
                       value={targetSubProjectId}
                       onChange={(e) => setTargetSubProjectId(e.target.value)}
@@ -2596,8 +2605,9 @@ export function App(): React.ReactElement {
                   </div>
 
                   <div>
-                    <label className="field-label">Target Coding Assistant Profile</label>
+                    <label className="field-label" htmlFor="cf-target-coding-assistant-profile">Target Coding Assistant Profile</label>
                     <select
+                      id="cf-target-coding-assistant-profile"
                       className="select"
                       value={assistantTarget}
                       onChange={(e) => setAssistantTarget(e.target.value as CodingAssistantTarget)}
@@ -2611,10 +2621,11 @@ export function App(): React.ReactElement {
                   </div>
 
                   <div>
-                    <label className="field-label">
+                    <label className="field-label" htmlFor="cf-custom-agent-template-instructions-optio">
                       Custom Agent Template Instructions (Optional)
                     </label>
                     <input
+                      id="cf-custom-agent-template-instructions-optio"
                       className="input"
                       placeholder="e.g. Prefer minimal diffs and preserve existing public signatures"
                       value={customTemplateInstruction}
@@ -2624,8 +2635,9 @@ export function App(): React.ReactElement {
 
                   <div className="form-grid">
                     <div>
-                      <label className="field-label">Max Context Budget (Chars)</label>
+                      <label className="field-label" htmlFor="cf-max-context-budget-chars">Max Context Budget (Chars)</label>
                       <input
+                      id="cf-max-context-budget-chars"
                         type="number"
                         className="input mono"
                         min={2000}
@@ -2638,8 +2650,9 @@ export function App(): React.ReactElement {
                       />
                     </div>
                     <div>
-                      <label className="field-label">Max Included Files</label>
+                      <label className="field-label" htmlFor="cf-max-included-files">Max Included Files</label>
                       <input
+                      id="cf-max-included-files"
                         type="number"
                         className="input mono"
                         min={1}
@@ -2654,8 +2667,9 @@ export function App(): React.ReactElement {
 
                   <div className="form-grid">
                     <div>
-                      <label className="field-label">Max Chars Per File Excerpt</label>
+                      <label className="field-label" htmlFor="cf-max-chars-per-file-excerpt">Max Chars Per File Excerpt</label>
                       <input
+                      id="cf-max-chars-per-file-excerpt"
                         type="number"
                         className="input mono"
                         min={500}
@@ -2668,8 +2682,9 @@ export function App(): React.ReactElement {
                       />
                     </div>
                     <div>
-                      <label className="field-label">Max Source File Size (KB)</label>
+                      <label className="field-label" htmlFor="cf-max-source-file-size-kb">Max Source File Size (KB)</label>
                       <input
+                      id="cf-max-source-file-size-kb"
                         type="number"
                         className="input mono"
                         min={4}
@@ -2683,8 +2698,9 @@ export function App(): React.ReactElement {
                   </div>
 
                   <div>
-                    <label className="field-label">Stale File Policy</label>
+                    <label className="field-label" htmlFor="cf-stale-file-policy">Stale File Policy</label>
                     <select
+                      id="cf-stale-file-policy"
                       className="select"
                       value={staleFilePolicy}
                       onChange={(e) => setStaleFilePolicy(e.target.value as 'flag' | 'reject')}
@@ -2930,8 +2946,9 @@ export function App(): React.ReactElement {
                   style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '14px' }}
                 >
                   <div>
-                    <label className="field-label">Category</label>
+                    <label className="field-label" htmlFor="cf-category">Category</label>
                     <select
+                      id="cf-category"
                       className="select"
                       value={newKnowCategory}
                       onChange={(e) => setNewKnowCategory(e.target.value as KnowledgeCategory)}
@@ -2944,8 +2961,9 @@ export function App(): React.ReactElement {
                     </select>
                   </div>
                   <div>
-                    <label className="field-label">Title</label>
+                    <label className="field-label" htmlFor="cf-title">Title</label>
                     <input
+                      id="cf-title"
                       className="input"
                       placeholder="e.g. ADR-002: Database Migration Locking Policy"
                       value={newKnowTitle}
@@ -2953,8 +2971,9 @@ export function App(): React.ReactElement {
                     />
                   </div>
                   <div>
-                    <label className="field-label">Anchor to Source File Path (Optional)</label>
+                    <label className="field-label" htmlFor="cf-anchor-to-source-file-path-optional">Anchor to Source File Path (Optional)</label>
                     <input
+                      id="cf-anchor-to-source-file-path-optional"
                       className="input mono"
                       list="repo-file-paths"
                       placeholder="e.g. apps/web-portal/src/BillingView.tsx"
@@ -2970,8 +2989,9 @@ export function App(): React.ReactElement {
                     </datalist>
                   </div>
                   <div>
-                    <label className="field-label">Content (Markdown)</label>
+                    <label className="field-label" htmlFor="cf-content-markdown">Content (Markdown)</label>
                     <textarea
+                      id="cf-content-markdown"
                       className="textarea"
                       rows={5}
                       placeholder="Document the architectural decision, convention, or workflow..."
@@ -3092,8 +3112,9 @@ export function App(): React.ReactElement {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '14px' }}>
                   <div>
-                    <label className="field-label">Git Revision / Target Spec</label>
+                    <label className="field-label" htmlFor="cf-git-revision-target-spec">Git Revision / Target Spec</label>
                     <input
+                      id="cf-git-revision-target-spec"
                       className="input mono"
                       value={diffTargetSpec}
                       onChange={(e) => setDiffTargetSpec(e.target.value)}
@@ -3121,6 +3142,7 @@ export function App(): React.ReactElement {
                     <textarea
                       className="textarea mono"
                       rows={9}
+                      aria-label="Unified diff patch"
                       placeholder="Leave blank to run `git diff` on the repository, or paste a unified diff here..."
                       value={rawDiffInput}
                       onChange={(e) => setRawDiffInput(e.target.value)}
@@ -3354,8 +3376,9 @@ export function App(): React.ReactElement {
                   {aiConfig && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '14px' }}>
                       <div>
-                        <label className="field-label">Active Provider Adapter</label>
+                        <label className="field-label" htmlFor="cf-active-provider-adapter">Active Provider Adapter</label>
                         <select
+                      id="cf-active-provider-adapter"
                           className="select"
                           value={aiConfig.activeProviderId}
                           onChange={(e) =>
@@ -3378,8 +3401,9 @@ export function App(): React.ReactElement {
                       </div>
 
                       <div>
-                        <label className="field-label">Provider Endpoint URL</label>
+                        <label className="field-label" htmlFor="cf-provider-endpoint-url">Provider Endpoint URL</label>
                         <input
+                      id="cf-provider-endpoint-url"
                           className="input mono"
                           value={aiConfig.endpointUrl}
                           onChange={(e) =>
@@ -3389,8 +3413,9 @@ export function App(): React.ReactElement {
                       </div>
 
                       <div>
-                        <label className="field-label">Model Identifier</label>
+                        <label className="field-label" htmlFor="cf-model-identifier">Model Identifier</label>
                         <input
+                      id="cf-model-identifier"
                           className="input mono"
                           value={aiConfig.modelName}
                           onChange={(e) => setAiConfig({ ...aiConfig, modelName: e.target.value })}

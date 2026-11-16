@@ -457,3 +457,52 @@ code, pre, .mono {
   border: 1px solid rgba(248, 113, 113, 0.4);
   color: #fecaca;
 }
+
+/* ---------- Responsive containment (narrow viewports) ---------- */
+/* Grid/flex children default to min-width:auto, which lets wide tables and
+   code blocks stretch panels far past the viewport. Allow them to shrink. */
+.app-shell > *,
+.split-layout > *,
+.content-area > *,
+.panel {
+  min-width: 0;
+}
+
+.panel {
+  overflow-wrap: break-word;
+}
+
+.topbar {
+  height: auto;
+  min-height: 54px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+@media (max-width: 960px) {
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .topbar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .content-area {
+    padding: 16px;
+  }
+
+  .panel {
+    padding: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  /* Wide tables scroll inside their panel instead of widening the page. */
+  .data-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

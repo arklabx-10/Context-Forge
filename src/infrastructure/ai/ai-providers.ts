@@ -298,16 +298,28 @@ export class ConsentGatedExternalAiProvider implements AiProviderPort {
       }
 
       const data = (await response.json()) as Record<string, unknown>;
-      let generatedText = '';
+      let generatedText: string;
 
       if (Array.isArray(data.choices) && data.choices[0]) {
-        const firstChoice = data.choices[0] as { message?: { content?: string } };
-        generatedText = firstChoice.message?.content ?? '';
-      } else if (Array.isArray(data.content) && data.content[0]) {
-        const firstBlock = data.content[0] as { text?: string };
-        generatedText = firstBlock.text ?? '';
+        // OpenAI-compatible chat completion shape
+        const firstChoice = data.choices[0] as { message?: { content?: unknown } };
+        const content = firstChoice.message?.content;
+        if (typeof content !== 'string') {
+          throw new Error('unrecognized response shape (choices[0].message.content is not text)');
+        }
+        generatedText = content;
+      } else if (Array.isArray(data.content)) {
+        // Anthropic Messages shape: join every text block (other block types are ignored)
+        const textBlocks = (data.content as { type?: unknown; text?: unknown }[]).filter(
+          (block): block is { type?: unknown; text: string } => typeof block?.text === 'string'
+        );
+        if (textBlocks.length === 0) {
+          throw new Error('unrecognized response shape (no text content blocks)');
+        }
+        generatedText = textBlocks.map((block) => block.text).join('');
       } else {
-        generatedText = JSON.stringify(data);
+        // Never surface raw provider payloads as AI-generated text
+        throw new Error('unrecognized response shape (expected "choices" or "content")');
       }
 
       return {

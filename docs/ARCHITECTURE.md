@@ -4,7 +4,7 @@
 ContextForge is a local-first, stack-agnostic developer workspace that analyzes arbitrary local repositories, tracks source-linked project knowledge with staleness detection, builds deterministic token-budgeted context packs for AI coding assistants, and conducts evidence-backed Git change reviews.
 
 ## 2. Technology Decision Record (ADR-001)
-- **Language & Runtime**: TypeScript 5.7 (`strict: true`, `noUncheckedIndexedAccess: true`) on Node.js 24.
+- **Language & Runtime**: TypeScript 5.7 (`strict: true`, `noUncheckedIndexedAccess: true`) on Node.js 22.13+ (Node.js 24 recommended). CI verifies Node 22 and 24 on Linux and Windows.
 - **Persistence & Search Index**: Node.js built-in `node:sqlite` (`DatabaseSync` with SQLite FTS5) — zero native addon compilation required, transactional snapshot storage, fast full-text indexing, and deterministic 1-click index deletion.
 - **Backend Server**: Node.js native `node:http` typed JSON REST server with zero external runtime framework dependencies.
 - **Frontend Workspace**: React 19 + Vite with a keyboard-accessible, responsive developer UI covering all 9 operational views.
