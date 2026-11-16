@@ -255,11 +255,22 @@ describe('Phase 5 — ContextForge CLI, CI/CD Headless Workflows & Production Pa
   });
 
   it('7. Serves production static UI assets and provides SPA routing fallback', async () => {
+    // Use a self-contained static bundle so the test does not depend on `npm run build`
+    // having produced dist/ui (CI runs tests before building).
+    const staticDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cf-static-ui-'));
+    await fs.mkdir(path.join(staticDir, 'assets'));
+    await fs.writeFile(
+      path.join(staticDir, 'index.html'),
+      '<!doctype html><html><head><title>ContextForge</title></head><body><div id="root"></div></body></html>',
+      'utf8',
+    );
+    await fs.writeFile(path.join(staticDir, 'assets', 'app.js'), 'console.log("cf");', 'utf8');
+
     const store = new ContextForgeSqliteStore(':memory:');
     const service = new ContextForgeWorkspaceService(store);
     const server = createContextForgeHttpServer(service, {
       workspaceRootDir: process.cwd(),
-      staticUiDistDir: path.join(process.cwd(), 'dist', 'ui'),
+      staticUiDistDir: staticDir,
     });
 
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
@@ -278,9 +289,15 @@ describe('Phase 5 — ContextForge CLI, CI/CD Headless Workflows & Production Pa
       const spaRes = await fetch(`${baseUrl}/explorer`);
       assert.equal(spaRes.status, 200);
       assert.ok(spaRes.headers.get('content-type')?.includes('text/html'));
+
+      // 3. Static assets are served with their own content type
+      const assetRes = await fetch(`${baseUrl}/assets/app.js`);
+      assert.equal(assetRes.status, 200);
+      assert.ok(assetRes.headers.get('content-type')?.includes('javascript'));
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       store.close();
+      await fs.rm(staticDir, { recursive: true, force: true });
     }
   });
 });

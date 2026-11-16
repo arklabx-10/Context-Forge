@@ -1,6 +1,5 @@
-import { beforeAll, describe, it } from 'vitest';
+import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { createDefaultAdapters } from '../src/adapters/index.js';
 import { analyzeRepository } from '../src/infrastructure/scanning/repository-analyzer.js';
@@ -12,17 +11,7 @@ import {
 const FIXTURES_ROOT = path.resolve(process.cwd(), 'tests/fixtures');
 
 describe('Phase 1 — Stack-Agnostic Repository Analysis Engine & Fixture Matrix', () => {
-  beforeAll(() => {
-    // Ensure gitignored dummy .env fixture exists for local/CI secret-exclusion testing without committing .env
-    const dummyEnvPath = path.join(FIXTURES_ROOT, 'malformed-and-inaccessible', '.env');
-    if (!fs.existsSync(dummyEnvPath)) {
-      fs.writeFileSync(
-        dummyEnvPath,
-        'SUPER_SECRET_API_TOKEN=sk_live_do_not_index_or_export_999999\nDATABASE_PASSWORD=top_secret_password\n',
-        'utf8',
-      );
-    }
-  });
+  // The gitignored dummy .env fixture is created by tests/setup/ensure-secret-fixtures.ts.
   it('1. Analyzes a compiled-language application (Rust + C++ header FFI) with multi-signal language detection and module dependencies', async () => {
     const repoPath = path.join(FIXTURES_ROOT, 'compiled-rust-app');
     const { snapshot } = await analyzeRepository({

@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     include: ['tests/*.test.ts'],
+    setupFiles: ['tests/setup/ensure-secret-fixtures.ts'],
     exclude: ['tests/fixtures/**', 'node_modules/**', 'dist/**'],
   },
   build: {
