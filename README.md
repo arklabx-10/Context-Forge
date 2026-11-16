@@ -47,7 +47,43 @@ contextforge report . -o REPORT.md
 
 # 5. Launch the local workspace server and static UI
 contextforge serve --port 4310
+
+# 6. Run as an MCP server so AI coding assistants can call ContextForge directly
+contextforge mcp
 ```
+
+### MCP Server (Claude Code, Cursor & other MCP clients)
+
+`contextforge mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server on stdio. Your assistant can then fetch context packs and change reviews itself, without you exporting files by hand. The server has no extra dependencies. It never runs repository code and never calls an external AI provider, because the MCP client is the AI.
+
+| Tool | What it does |
+| :--- | :--- |
+| `onboard_repository` | Analyze and index a local repository (any language); returns sub-projects, languages, frameworks and limitations. |
+| `search_repository` | Full-text search over files, symbols, SQL objects, dependencies and knowledge. Snippets are fenced as untrusted content. |
+| `build_context_pack` | Re-scan and assemble a deterministic, budget-limited context pack for a task (`task`, optional `taskType`, `target`, `seedFiles`, `budgetChars`, `maxFiles`). |
+| `review_changes` | Evidence-backed review of the working tree, a revision range (`target`), or a supplied unified `diff`. |
+| `knowledge_audit` | Report which recorded ADRs and conventions are fresh, potentially stale, or reference missing files. |
+
+Register it with Claude Code after `npm run build`. Use an absolute path, and pass `--db` so the index doesn't land in whichever project the assistant is working in:
+
+```bash
+claude mcp add contextforge -- node /path/to/ContextForge/bin/contextforge.js mcp --db ~/.contextforge/contextforge.db
+```
+
+For other clients (e.g. Cursor's `mcp.json`), use the same command:
+
+```json
+{
+  "mcpServers": {
+    "contextforge": {
+      "command": "node",
+      "args": ["/path/to/ContextForge/bin/contextforge.js", "mcp", "--db", "/home/you/.contextforge/contextforge.db"]
+    }
+  }
+}
+```
+
+If you don't pass `--db`, the index is stored in `.contextforge-data/` under the server's working directory, the same as for the other CLI commands.
 
 ### GitHub Actions CI Example
 

@@ -8,6 +8,7 @@ import type {
 } from '../domain/index.js';
 import { ContextForgeSqliteStore } from '../infrastructure/persistence/sqlite-store.js';
 import { createContextForgeHttpServer } from '../server/app-server.js';
+import { runMcpStdioServer } from '../server/mcp-server.js';
 
 export interface CliIo {
   stdout(msg: string): void;
@@ -99,6 +100,7 @@ COMMANDS:
   knowledge [path]        Audit project knowledge staleness and reconcile source drift.
   report [path]           Generate a deterministic Markdown repository report without AI.
   serve                   Start the local HTTP API and UI static file server.
+  mcp                     Run a Model Context Protocol server on stdio (for Claude Code, Cursor, ...).
   help                    Show this help message.
 
 OPTIONS:
@@ -513,6 +515,19 @@ export async function runCli(
         return new Promise<number>(() => {
           // Keep running
         });
+      }
+
+      case 'mcp': {
+        // stdout is reserved for JSON-RPC protocol messages; diagnostics go to stderr.
+        io.stderr(`ContextForge MCP server ${VERSION} ready on stdio (database: ${dbPath}).`);
+        await runMcpStdioServer({
+          service,
+          serverInfo: { name: 'contextforge', version: VERSION },
+          input: process.stdin,
+          output: process.stdout,
+          log: (msg) => io.stderr(msg),
+        });
+        return 0;
       }
 
       default:

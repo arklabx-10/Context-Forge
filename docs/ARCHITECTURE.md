@@ -7,6 +7,7 @@ ContextForge is a local-first, stack-agnostic developer workspace that analyzes 
 - **Language & Runtime**: TypeScript 5.7 (`strict: true`, `noUncheckedIndexedAccess: true`) on Node.js 22.13+ (Node.js 24 recommended). CI verifies Node 22 and 24 on Linux and Windows.
 - **Persistence & Search Index**: Node.js built-in `node:sqlite` (`DatabaseSync` with SQLite FTS5) — zero native addon compilation required, transactional snapshot storage, fast full-text indexing, and deterministic 1-click index deletion.
 - **Backend Server**: Node.js native `node:http` typed JSON REST server with zero external runtime framework dependencies.
+- **MCP Server**: `contextforge mcp` (`src/server/mcp-server.ts`) exposes onboarding, search, context packs, change review and knowledge audit to MCP clients over newline-delimited JSON-RPC 2.0 on stdio. It is a thin adapter over `ContextForgeWorkspaceService` and makes no outbound AI calls. Repository-derived output stays fenced in `<untrusted_repository_content>` blocks.
 - **Frontend Workspace**: React 19 + Vite with a keyboard-accessible, responsive developer UI covering all 9 operational views.
 - **Test Harness**: Vitest covering unit tests, polyglot fixture integration tests, determinism checks, and adversarial security boundary tests.
 
